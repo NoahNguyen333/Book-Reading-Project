@@ -1,0 +1,58 @@
+import { BookOpen, Users, ShieldCheck, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui';
+
+export default function HomePage() {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-b from-blue-50 to-white dark:from-gray-950 dark:to-gray-900">
+      <div className="max-w-3xl text-center space-y-6">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+          <Sparkles className="w-4 h-4" />
+          <span>Session 1: Architectural Foundation Active</span>
+        </div>
+
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+          Family Reading Room
+        </h1>
+
+        <p className="text-lg text-gray-600 dark:text-gray-300 max-w-xl mx-auto">
+          Synchronized e-book reading, shared bookmarks, and integrated family reading rooms designed for parents, kids, and grandparents.
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
+          <Button size="lg" variant="primary" className="gap-2">
+            <BookOpen className="w-5 h-5" />
+            <span>Open Library</span>
+          </Button>
+          <Button size="lg" variant="outline" className="gap-2">
+            <Users className="w-5 h-5" />
+            <span>Join Reading Room</span>
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left">
+          <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/50 shadow-sm">
+            <ShieldCheck className="w-6 h-6 text-blue-600 dark:text-blue-400 mb-2" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Tenant Isolation</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Multi-tenant architecture powered by PostgreSQL Row-Level Security.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/50 shadow-sm">
+            <BookOpen className="w-6 h-6 text-blue-600 dark:text-blue-400 mb-2" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Local Blob Cache</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              IndexedDB EPUB caching with byte verification for instant page loads.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800/50 shadow-sm">
+            <Users className="w-6 h-6 text-blue-600 dark:text-blue-400 mb-2" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Shared Rooms</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Realtime page synchronization for family reading across any distance.
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
