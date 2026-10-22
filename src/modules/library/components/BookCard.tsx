@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useTransition } from 'react';
+import Link from 'next/link';
 import { Book } from '../types';
-import { BookOpen, Trash2, Loader2 } from 'lucide-react';
+import { BookOpen, Trash2, Loader2, ArrowRight } from 'lucide-react';
 import { deleteBookAction } from '../actions';
 
 interface BookCardProps {
@@ -85,6 +86,14 @@ export function BookCard({ book, isAdmin, tenantId }: BookCardProps) {
           <span>{formattedSize}</span>
           <span className="capitalize">{book.processingStatus}</span>
         </div>
+
+        <Link
+          href={`/reader/${book.id}`}
+          className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition"
+        >
+          <span>Read Book</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
     </div>
   );
