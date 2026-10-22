@@ -3,6 +3,9 @@ import { cookies } from 'next/headers';
 import { getCurrentUser, signOut } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
 import { TenantProvider } from '@/modules/tenant/context';
+import { canUploadBooks } from '@/modules/entitlements';
+import { getTenantBooks } from '@/modules/library/service';
+import { BookCatalog } from '@/modules/library/components';
 import { Button } from '@/components/ui';
 import {
   BookOpen,
@@ -30,6 +33,12 @@ export default async function DashboardPage() {
 
   const memberships = await getUserTenants(user.id);
   const activeMembership = resolveActiveMembership(memberships, activeTenantCookie);
+
+  const tenantId = activeMembership?.tenant.id || '';
+  const isAdmin = canUploadBooks(activeMembership?.role);
+
+  // Fetch tenant books if active space exists
+  const books = tenantId ? await getTenantBooks(tenantId) : [];
 
   return (
     <TenantProvider
@@ -61,7 +70,7 @@ export default async function DashboardPage() {
         </header>
 
         {/* Dashboard Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
           {/* Welcome Header */}
           <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -70,7 +79,7 @@ export default async function DashboardPage() {
                   Welcome back, {user.fullName || user.email}!
                 </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Manage your family library, invite readers, or launch a shared reading room.
+                  Manage your family library, upload books, and initiate synchronized reading sessions.
                 </p>
               </div>
 
@@ -114,25 +123,17 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Quick Actions & Session 3 Preview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3">
-              <div className="inline-flex p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Family Book Library
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Upload and organize family EPUB books with local IndexedDB caching and cloud storage.
-              </p>
-              <div className="pt-2">
-                <Button variant="outline" size="sm" disabled className="opacity-70 cursor-not-allowed">
-                  Coming in Session 3
-                </Button>
-              </div>
-            </div>
+          {/* Book Catalog Section (Live in Session 3) */}
+          <section className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+            <BookCatalog
+              books={books}
+              isAdmin={isAdmin}
+              tenantId={tenantId}
+            />
+          </section>
 
+          {/* Quick Actions & Session 4 Preview */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3">
               <div className="inline-flex p-2.5 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
                 <Users className="w-5 h-5" />
@@ -147,6 +148,23 @@ export default async function DashboardPage() {
                 <Button variant="outline" size="sm" disabled className="opacity-70 cursor-not-allowed">
                   Coming in Session 4
                 </Button>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3">
+              <div className="inline-flex p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                IndexedDB Device Cache
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Local blob caching engine configured for instant offline-first reading.
+              </p>
+              <div className="pt-2">
+                <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  Engine Ready
+                </span>
               </div>
             </div>
           </div>
