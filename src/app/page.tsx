@@ -1,5 +1,6 @@
-import { BookOpen, Users, ShieldCheck, Sparkles } from 'lucide-react';
+import { BookOpen, Users, ShieldCheck, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui';
+import Link from 'next/link';
 
 export default function HomePage() {
   return (
@@ -7,7 +8,7 @@ export default function HomePage() {
       <div className="max-w-3xl text-center space-y-6">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
           <Sparkles className="w-4 h-4" />
-          <span>Session 1: Architectural Foundation Active</span>
+          <span>Session 2: Auth & Family Tenancy Active</span>
         </div>
 
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-gray-900 dark:text-white">
@@ -19,14 +20,23 @@ export default function HomePage() {
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
-          <Button size="lg" variant="primary" className="gap-2">
-            <BookOpen className="w-5 h-5" />
-            <span>Open Library</span>
-          </Button>
-          <Button size="lg" variant="outline" className="gap-2">
-            <Users className="w-5 h-5" />
-            <span>Join Reading Room</span>
-          </Button>
+          <Link href="/register">
+            <Button size="lg" variant="primary" className="gap-2">
+              <span>Create Family Space</span>
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+          <Link href="/login">
+            <Button size="lg" variant="outline" className="gap-2">
+              <span>Sign In</span>
+            </Button>
+          </Link>
+          <Link href="/dashboard">
+            <Button size="lg" variant="ghost" className="gap-2">
+              <Users className="w-4 h-4" />
+              <span>Go to Dashboard</span>
+            </Button>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left">

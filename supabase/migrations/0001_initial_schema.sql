@@ -1,11 +1,84 @@
--- ==============================================================================
--- Migration: 0001_initial_schema.sql
--- Description: Initial schema for Family Reading Room with Multi-Tenant Row-Level Security
--- ==============================================================================
+-- 1. EXTENSIONS
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. Helper Function: current_user_tenant_role
--- Evaluates the role ('admin', 'reader', or NULL) of the authenticated user within a specific tenant.
--- Uses SECURITY DEFINER to bypass RLS recursion on tenant_members during policy evaluation.
+-- 2. CREATE ALL TABLES FIRST
+CREATE TABLE IF NOT EXISTS public.tenants (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    plan_tier TEXT NOT NULL DEFAULT 'free',
+    limits JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.tenant_members (
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'reader')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    PRIMARY KEY (tenant_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.books (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    description TEXT,
+    cover_url TEXT,
+    storage_path TEXT NOT NULL,
+    file_size BIGINT NOT NULL,
+    format TEXT NOT NULL DEFAULT 'epub',
+    processing_status TEXT NOT NULL DEFAULT 'ready',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.reading_progress (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    cfi TEXT NOT NULL,
+    percentage NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    UNIQUE(user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.bookmarks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    cfi TEXT NOT NULL,
+    label TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.reading_rooms (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE UNIQUE,
+    active_book_id UUID REFERENCES public.books(id) ON DELETE SET NULL,
+    meeting_url TEXT,
+    session_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- 3. INDEXES
+CREATE INDEX IF NOT EXISTS idx_tenant_members_user ON public.tenant_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_books_tenant ON public.books(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_progress_user_book ON public.reading_progress(user_id, book_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON public.bookmarks(user_id, book_id);
+
+-- 4. HELPER FUNCTION (NOW SAFE TO REFERENCE public.tenant_members)
 CREATE OR REPLACE FUNCTION public.current_user_tenant_role(check_tenant_id UUID)
 RETURNS TEXT
 LANGUAGE sql
@@ -20,105 +93,7 @@ AS $$
   LIMIT 1;
 $$;
 
--- 2. Tenants Table
-CREATE TABLE IF NOT EXISTS public.tenants (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  plan_tier TEXT NOT NULL DEFAULT 'free',
-  limits JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- 3. Tenant Members Table
-CREATE TABLE IF NOT EXISTS public.tenant_members (
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'reader')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, user_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_tenant_members_user_id ON public.tenant_members(user_id);
-CREATE INDEX IF NOT EXISTS idx_tenant_members_tenant_id ON public.tenant_members(tenant_id);
-
--- 4. Books Table
-CREATE TABLE IF NOT EXISTS public.books (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  author TEXT,
-  description TEXT,
-  cover_url TEXT,
-  storage_path TEXT,
-  file_size BIGINT,
-  format TEXT NOT NULL DEFAULT 'epub',
-  processing_status TEXT NOT NULL DEFAULT 'ready',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_books_tenant_id ON public.books(tenant_id);
-
--- 5. Reading Progress Table
-CREATE TABLE IF NOT EXISTS public.reading_progress (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  cfi TEXT,
-  percentage NUMERIC(5,2) DEFAULT 0.00,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT uq_reading_progress_user_book UNIQUE (user_id, book_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reading_progress_tenant_id ON public.reading_progress(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_reading_progress_user_id ON public.reading_progress(user_id);
-CREATE INDEX IF NOT EXISTS idx_reading_progress_book_id ON public.reading_progress(book_id);
-
--- 6. Bookmarks Table
-CREATE TABLE IF NOT EXISTS public.bookmarks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  cfi TEXT NOT NULL,
-  label TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_bookmarks_tenant_id ON public.bookmarks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_bookmarks_user_id ON public.bookmarks(user_id);
-CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON public.bookmarks(book_id);
-
--- 7. Reading Rooms Table
-CREATE TABLE IF NOT EXISTS public.reading_rooms (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE UNIQUE,
-  active_book_id UUID REFERENCES public.books(id) ON DELETE SET NULL,
-  meeting_url TEXT,
-  session_state JSONB NOT NULL DEFAULT '{}'::jsonb,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_reading_rooms_tenant_id ON public.reading_rooms(tenant_id);
-
--- 8. Audit Logs Table
-CREATE TABLE IF NOT EXISTS public.audit_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  action TEXT NOT NULL,
-  details JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id ON public.audit_logs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
-
--- ==============================================================================
--- Enable Row Level Security (RLS) on all 7 tables
--- ==============================================================================
-
+-- 5. ENABLE ROW LEVEL SECURITY
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
@@ -127,209 +102,116 @@ ALTER TABLE public.bookmarks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reading_rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
--- ==============================================================================
--- RLS Policies
--- ==============================================================================
+-- 6. POLICIES
+-- Tenants
+CREATE POLICY "Users can view tenants they belong to"
+ON public.tenants FOR SELECT
+TO authenticated
+USING (
+  id IN (SELECT tenant_id FROM public.tenant_members WHERE user_id = auth.uid())
+);
 
--- Tenants Table Policies
-CREATE POLICY "Tenants: members can view their tenant"
-  ON public.tenants
-  FOR SELECT
-  USING (
-    public.current_user_tenant_role(id) IS NOT NULL
-  );
+-- Tenant Members
+CREATE POLICY "Members can view members in the same tenant"
+ON public.tenant_members FOR SELECT
+TO authenticated
+USING (
+  tenant_id IN (SELECT tenant_id FROM public.tenant_members WHERE user_id = auth.uid())
+);
 
-CREATE POLICY "Tenants: admins can update tenant configuration"
-  ON public.tenants
-  FOR UPDATE
-  USING (
-    public.current_user_tenant_role(id) = 'admin'
-  )
-  WITH CHECK (
-    public.current_user_tenant_role(id) = 'admin'
-  );
+CREATE POLICY "Admins can manage tenant members"
+ON public.tenant_members FOR ALL
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+)
+WITH CHECK (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
--- Tenant Members Table Policies
-CREATE POLICY "Tenant Members: members can view members of their tenant"
-  ON public.tenant_members
-  FOR SELECT
-  USING (
-    public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
+-- Books
+CREATE POLICY "Tenant members can view books"
+ON public.books FOR SELECT
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) IS NOT NULL
+);
 
-CREATE POLICY "Tenant Members: admins can insert memberships"
-  ON public.tenant_members
-  FOR INSERT
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+CREATE POLICY "Admins can insert books"
+ON public.books FOR INSERT
+TO authenticated
+WITH CHECK (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
-CREATE POLICY "Tenant Members: admins can update memberships"
-  ON public.tenant_members
-  FOR UPDATE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  )
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+CREATE POLICY "Admins can update books"
+ON public.books FOR UPDATE
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+)
+WITH CHECK (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
-CREATE POLICY "Tenant Members: admins can delete memberships"
-  ON public.tenant_members
-  FOR DELETE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+CREATE POLICY "Admins can delete books"
+ON public.books FOR DELETE
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
--- Books Table Policies
-CREATE POLICY "Books: members can view books within tenant"
-  ON public.books
-  FOR SELECT
-  USING (
-    public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
+-- Reading Progress
+CREATE POLICY "Users manage their own reading progress"
+ON public.reading_progress FOR ALL
+TO authenticated
+USING (
+  user_id = auth.uid() AND public.current_user_tenant_role(tenant_id) IS NOT NULL
+)
+WITH CHECK (
+  user_id = auth.uid() AND public.current_user_tenant_role(tenant_id) IS NOT NULL
+);
 
-CREATE POLICY "Books: admins can insert books"
-  ON public.books
-  FOR INSERT
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+-- Bookmarks
+CREATE POLICY "Users manage their own bookmarks"
+ON public.bookmarks FOR ALL
+TO authenticated
+USING (
+  user_id = auth.uid() AND public.current_user_tenant_role(tenant_id) IS NOT NULL
+)
+WITH CHECK (
+  user_id = auth.uid() AND public.current_user_tenant_role(tenant_id) IS NOT NULL
+);
 
-CREATE POLICY "Books: admins can update books"
-  ON public.books
-  FOR UPDATE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  )
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+-- Reading Rooms
+CREATE POLICY "Tenant members can view reading room"
+ON public.reading_rooms FOR SELECT
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) IS NOT NULL
+);
 
-CREATE POLICY "Books: admins can delete books"
-  ON public.books
-  FOR DELETE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
+CREATE POLICY "Admins can update reading room"
+ON public.reading_rooms FOR ALL
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+)
+WITH CHECK (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
--- Reading Rooms Table Policies
-CREATE POLICY "Reading Rooms: members can view reading room within tenant"
-  ON public.reading_rooms
-  FOR SELECT
-  USING (
-    public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
+-- Audit Logs
+CREATE POLICY "Admins can view tenant audit logs"
+ON public.audit_logs FOR SELECT
+TO authenticated
+USING (
+  public.current_user_tenant_role(tenant_id) = 'admin'
+);
 
-CREATE POLICY "Reading Rooms: admins can insert reading room"
-  ON public.reading_rooms
-  FOR INSERT
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
-
-CREATE POLICY "Reading Rooms: admins can update reading room"
-  ON public.reading_rooms
-  FOR UPDATE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  )
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
-
-CREATE POLICY "Reading Rooms: admins can delete reading room"
-  ON public.reading_rooms
-  FOR DELETE
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
-
--- Reading Progress Table Policies
-CREATE POLICY "Reading Progress: users can view only their own progress"
-  ON public.reading_progress
-  FOR SELECT
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Reading Progress: users can insert their own progress"
-  ON public.reading_progress
-  FOR INSERT
-  WITH CHECK (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Reading Progress: users can update their own progress"
-  ON public.reading_progress
-  FOR UPDATE
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  )
-  WITH CHECK (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Reading Progress: users can delete their own progress"
-  ON public.reading_progress
-  FOR DELETE
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
--- Bookmarks Table Policies
-CREATE POLICY "Bookmarks: users can view only their own bookmarks"
-  ON public.bookmarks
-  FOR SELECT
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Bookmarks: users can insert their own bookmarks"
-  ON public.bookmarks
-  FOR INSERT
-  WITH CHECK (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Bookmarks: users can update their own bookmarks"
-  ON public.bookmarks
-  FOR UPDATE
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  )
-  WITH CHECK (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
-CREATE POLICY "Bookmarks: users can delete their own bookmarks"
-  ON public.bookmarks
-  FOR DELETE
-  USING (
-    user_id = auth.uid()
-    AND public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
-
--- Audit Logs Table Policies
-CREATE POLICY "Audit Logs: only admins can view audit logs"
-  ON public.audit_logs
-  FOR SELECT
-  USING (
-    public.current_user_tenant_role(tenant_id) = 'admin'
-  );
-
-CREATE POLICY "Audit Logs: admins and tenant members can insert audit logs"
-  ON public.audit_logs
-  FOR INSERT
-  WITH CHECK (
-    public.current_user_tenant_role(tenant_id) IS NOT NULL
-  );
+CREATE POLICY "Members can insert audit logs"
+ON public.audit_logs FOR INSERT
+TO authenticated
+WITH CHECK (
+  public.current_user_tenant_role(tenant_id) IS NOT NULL
+);

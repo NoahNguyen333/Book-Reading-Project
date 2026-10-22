@@ -19,3 +19,16 @@ export interface TenantMember {
   role: TenantRole;
   createdAt: string;
 }
+
+export interface UserTenantMembership {
+  tenant: Tenant;
+  role: TenantRole;
+}
+
+export interface TenantContextValue {
+  activeTenant: Tenant | null;
+  activeRole: TenantRole | null;
+  memberships: UserTenantMembership[];
+  setActiveTenantId: (tenantId: string) => void;
+  isLoading: boolean;
+}
