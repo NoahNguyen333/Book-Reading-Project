@@ -48,6 +48,30 @@ export const MAX_FONT_SIZE = 28;
 export const DEFAULT_FONT_SIZE = 16;
 
 /**
+ * Extracts a page number from a PDF pseudo-CFI string (e.g. "page:42" -> 42).
+ */
+export function parsePageFromCfi(cfi?: string | null): number | null {
+  if (!cfi) return null;
+  const match = cfi.match(/^page:(\d+)$/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Formats a page number into a standardized PDF pseudo-CFI string.
+ */
+export function formatPageCfi(page: number): string {
+  return `page:${Math.max(1, Math.round(page))}`;
+}
+
+/**
+ * Calculates reading completion percentage from page numbers.
+ */
+export function calculatePagePercentage(currentPage: number, totalPages: number): number {
+  if (totalPages <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((currentPage / totalPages) * 100)));
+}
+
+/**
  * Clamps font size within allowed bounds [12px, 28px].
  */
 export function clampFontSize(size: number): number {

@@ -1,6 +1,6 @@
 # Project Status: Family Reading Room
 
-## Session 4: EPUB Reader Engine & Synchronized Reading Infrastructure
+## Session 4.1: Multi-Format Ingestion Pipeline & Native PDF Reader Engine
 **Status**: Completed  
 **Timestamp**: 2026-10-22  
 **Branch**: `main`
@@ -9,65 +9,55 @@
 
 ### 1. Accomplishments & Verification
 
-1. **EPUB Rendering Core & Typings**:
-   - Integrated `epubjs` with full TypeScript declaration shims in [`src/types/epubjs.d.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/types/epubjs.d.ts).
-   - Ensured zero type errors across rendition events, navigation TOC schemas, locations calculation, and theme engines.
+1. **PDF.js Integration & Static Worker Setup**:
+   - Installed `pdfjs-dist` (v6.4.299).
+   - Configured static PDF.js worker asset at [`public/pdf.worker.min.mjs`](file:///C:/Users/Admin/Book-Reading-Project/public/pdf.worker.min.mjs) for offline-first, CDN-independent rendering.
 
-2. **Authorized Book Loader & Progress Sync Services**:
-   - Built [`src/modules/reader/service.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/service.ts):
-     * `getBookDetails`: Resolves book metadata within active tenant boundaries.
-     * `getUserReadingProgress`: Retrieves user's latest saved CFI anchor and percentage completion.
-     * `getBookmarks`: Retrieves user's bookmarks ordered chronologically.
-     * `upsertReadingProgress`: Persists reading locations into `public.reading_progress` (unique on `[user_id, book_id]`).
-     * `createBookmark` and `removeBookmark`: Manages user bookmarks with labels.
-   - Built [`src/modules/reader/actions.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/actions.ts):
-     * `getAuthorizedBookDownloadUrl`: Generates short-lived (60s) signed URLs for private EPUB blobs with role-based access verification.
-     * `saveReadingProgressAction`: Server action for debounced CFI position persistence.
-     * `addBookmarkAction` & `deleteBookmarkAction`: Server actions for user bookmark management.
+2. **Multi-Format Document Ingestion & Metadata Pipeline**:
+   - Upgraded [`src/modules/library/validation.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/validation.ts):
+     * Expanded `validateFileBasics` to validate both `.epub` and `.pdf` documents within the 50 MB threshold.
+     * Built `validateAndExtractPdfMetadata`: Verifies `%PDF-` header signature, parses Title and Author from trailer/Info dictionary, extracts page count from page tree, and falls back to clean filename normalization.
+     * Generates first-page canvas thumbnail in browser pre-flight inspection.
+     * Built `validateAndExtractMetadata`: Unified router dynamically routing files to either EPUB or PDF extraction pipeline.
+   - Upgraded [`src/modules/library/actions.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/actions.ts):
+     * Persists format (`'pdf'` or `'epub'`) in `public.books.format`.
+     * Saves PDF binaries to `books/{tenant_id}/{book_id}.pdf` and thumbnail covers to `books/{tenant_id}/{book_id}-cover.jpg`.
+   - Upgraded [`src/modules/library/components/BookUploadModal.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/components/BookUploadModal.tsx):
+     * Accepts both `.epub` and `.pdf` files via file picker and drag-and-drop.
+     * Displays real-time format badges and page count preview during upload.
 
-3. **Client-Side Loader Hook (`useBookLoader`)**:
-   - Built [`src/modules/reader/hooks/useBookLoader.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/hooks/useBookLoader.ts):
-     * Implements a double-layer caching strategy:
-       1. Queries local device IndexedDB via `BookCacheService.getBookBlob(bookId)`.
-       2. On cache hit, yields `ArrayBuffer` instantly without network latency.
-       3. On cache miss, requests signed download URL, streams binary over HTTPS, caches into IndexedDB, and yields buffer.
-     * Tracks loading state, stream progress percentage, and source indicator (`'cache'` vs `'network'`).
+3. **Dedicated PDF Reader Component (`PdfReader`)**:
+   - Built [`src/modules/reader/components/PdfReader.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/components/PdfReader.tsx):
+     * High-DPI canvas rendering using device pixel ratio.
+     * Page navigation: Next, Previous, and direct page number input.
+     * Zoom controls: Zoom In, Zoom Out, and Fit-Width scaling calculation.
+     * Reading themes: Light, Dark (CSS canvas inversion filter), and Sepia (warm tone filter).
+     * Reading progress tracking: Calculates percentage as `(currentPage / totalPages) * 100`, records location as `page:<number>` (e.g. `page:42`), and debounces progress writes by 1000ms.
+     * Restores last read page number on initial load.
+     * Bookmarks: Saves bookmark anchors tagged to specific page numbers with instant jumping.
 
-4. **EPUB Reader Component (`EpubReader`)**:
-   - Built [`src/modules/reader/components/EpubReader.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/components/EpubReader.tsx):
-     * Renders EPUB with standard paginated flow (`flow: 'paginated'`).
-     * Clean unmount lifecycle management preventing memory leaks.
-     * Theme switcher: Light (`#ffffff`), Sepia (`#fbf0d9`), Dark (`#121212`).
-     * Font size adjustments: Clamped between 12px and 28px with reset capability.
-     * Navigation: Prev/Next buttons and global `ArrowLeft`/`ArrowRight` keyboard listener.
-     * Slide-over Table of Contents with direct chapter jumping.
-     * Dynamic progress bar showing reading completion percentage.
-     * Bookmark panel with "Bookmark Current Location" prompt and direct jump buttons.
-     * Debounced progress sync (1000ms) on `relocated` event to prevent database flood during fast skimming.
+4. **Polymorphic Reader Container**:
+   - Updated [`src/modules/reader/components/ReaderContainer.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/components/ReaderContainer.tsx) and [`src/app/reader/[bookId]/page.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/app/reader/[bookId]/page.tsx):
+     * Dynamically renders `PdfReader` when `format === 'pdf'` and `EpubReader` when `format === 'epub'`.
+     * Reuses `useBookLoader` and `BookCacheService` for IndexedDB device blob caching and private signed URL streaming across both formats identically.
 
-5. **Distraction-Free Reader Route (`/reader/[bookId]`)**:
-   - Created [`src/app/reader/[bookId]/page.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/app/reader/[bookId]/page.tsx):
-     * Protected route verifying authentication and tenant access via root middleware.
-     * Hydrates book metadata, initial saved progress CFI, and bookmarks server-side.
-     * Includes distraction-free top bar with "Back to Dashboard", book title, author, and tenant indicator.
-     * Integrated "Read Book" direct CTA button on `BookCard` in dashboard.
-
-6. **Testing & Validation**:
-   - Added unit test suite in [`src/modules/reader/__tests__/reader.test.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/__tests__/reader.test.ts) (8 tests) testing font size clamping, theme configurations, progress debouncing cancellation/timing, and CFI serialization.
-   - Total unit tests passing: **44 / 44**.
+5. **Testing & Validation**:
+   - Added unit test suite in [`src/modules/library/__tests__/pdf_validation.test.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/__tests__/pdf_validation.test.ts) (9 tests) verifying PDF header validation, metadata extraction, page counting, and format routing.
+   - Added unit test suite in [`src/modules/reader/__tests__/pdf_reader.test.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/__tests__/pdf_reader.test.ts) (9 tests) verifying page CFI serialization (`page:<n>`), boundary clamping, and percentage calculation.
+   - Total unit tests passing: **62 / 62** across 7 test suites.
    - Verified zero TypeScript and ESLint errors with `npm run typecheck` and `npm run build`.
 
 ---
 
-### 2. Available Routes & Components
+### 2. Available Routes & Multi-Format Support
 
-| Route | Protection | Features |
-|---|---|---|
-| `/` | Public | Landing page & feature overview |
-| `/login` | Guest-only | Email & password authentication |
-| `/register` | Guest-only | User registration & initial space creation |
-| `/dashboard` | Protected (SSR) | Family bookshelf, role-gated EPUB upload modal, space switcher |
-| `/reader/[bookId]` | Protected (SSR) | Full-screen EPUB reader, IndexedDB blob caching, CFI progress tracking, TOC, bookmarks |
+| Route | Protection | Formats Supported | Features |
+|---|---|---|---|
+| `/` | Public | — | Landing page & feature overview |
+| `/login` | Guest-only | — | Email & password authentication |
+| `/register` | Guest-only | — | User registration & initial space creation |
+| `/dashboard` | Protected (SSR) | EPUB, PDF | Multi-format bookshelf, upload modal, space switcher |
+| `/reader/[bookId]` | Protected (SSR) | EPUB, PDF | Polymorphic reader switching automatically between `PdfReader` and `EpubReader` with IndexedDB blob caching |
 
 ---
 
@@ -84,31 +74,33 @@
   ```text
   RUN  v3.2.7 C:/Users/Admin/Book-Reading-Project
 
-  ✓ src/modules/entitlements/__tests__/permissions.test.ts (13 tests) 15ms
-  ✓ src/modules/reader/__tests__/reader.test.ts (8 tests) 34ms
-  ✓ src/modules/tenant/__tests__/tenant.test.ts (11 tests) 15ms
-  ✓ src/modules/reader/__tests__/storage.test.ts (4 tests) 236ms
-  ✓ src/modules/library/__tests__/validation.test.ts (8 tests) 50ms
+  ✓ src/modules/reader/__tests__/pdf_reader.test.ts (9 tests) 11ms
+  ✓ src/modules/entitlements/__tests__/permissions.test.ts (13 tests) 11ms
+  ✓ src/modules/reader/__tests__/reader.test.ts (8 tests) 27ms
+  ✓ src/modules/tenant/__tests__/tenant.test.ts (11 tests) 13ms
+  ✓ src/modules/reader/__tests__/storage.test.ts (4 tests) 228ms
+  ✓ src/modules/library/__tests__/validation.test.ts (8 tests) 77ms
+  ✓ src/modules/library/__tests__/pdf_validation.test.ts (9 tests) 327ms
 
-  Test Files  5 passed (5)
-       Tests  44 passed (44)
-  Duration  3.37s
+  Test Files  7 passed (7)
+       Tests  62 passed (62)
+  Duration  3.58s
   Exit code: 0
   ```
 
 - **Next.js Production Build (`npm run build`)**:
   ```text
   ▲ Next.js 15.5.28
-  ✓ Compiled successfully in 4.8s
+  ✓ Compiled successfully in 11.9s
   ✓ Generating static pages (7/7)
   Finalizing page optimization ...
 
   Route (app)                                 Size  First Load JS
   ┌ ○ /                                      161 B         106 kB
   ├ ○ /_not-found                            993 B         104 kB
-  ├ ƒ /dashboard                           34.5 kB         157 kB
+  ├ ƒ /dashboard                           35.4 kB         158 kB
   ├ ○ /login                               1.96 kB         117 kB
-  ├ ƒ /reader/[bookId]                      109 kB         232 kB
+  ├ ƒ /reader/[bookId]                      111 kB         234 kB
   └ ○ /register                            2.33 kB         118 kB
   + First Load JS shared by all             103 kB
   Exit code: 0
@@ -120,7 +112,7 @@
 
 **Session 5 Objective: Realtime Reading Room Synchronization & Live Session Collaboration**:
 1. Implement Supabase Realtime channel integration on `reading_rooms` for the active family space.
-2. Build the live participant presence hook (`useRoomPresence`) broadcasting connected family members, reading locations, and host status.
-3. Implement host leader-follow mode: when the host turns a page in `/room/[roomId]`, the synchronized CFI is broadcast to all active participant readers with an optimistic debounce window.
+2. Build the live participant presence hook (`useRoomPresence`) broadcasting connected family members, reading locations (EPUB CFI or PDF page number), and host status.
+3. Implement host leader-follow mode: when the host turns a page in `/room/[roomId]`, the synchronized location is broadcast to all active participant readers with an optimistic debounce window.
 4. Integrate optional meeting link launcher (e.g. Google Meet, Jitsi, or Daily.co) directly into the synchronized room header.
 5. Create reading room join/start UI on dashboard and the dedicated `/room` layout.

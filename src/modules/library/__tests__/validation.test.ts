@@ -20,8 +20,8 @@ describe('EPUB Validation & Metadata Extraction', () => {
       expect(result.error).toContain('exceeds the 50 MB limit');
     });
 
-    it('rejects non-epub extensions', () => {
-      const result = validateFileBasics('document.pdf', 5000, 'application/pdf');
+    it('rejects unsupported extensions', () => {
+      const result = validateFileBasics('document.docx', 5000, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('Invalid file extension');
     });

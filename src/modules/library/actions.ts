@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, findTenantRole } from '@/modules/tenant';
 import { canUploadBooks } from '@/modules/entitlements';
-import { validateFileBasics, validateAndExtractEpubMetadata } from './validation';
+import { validateFileBasics, validateAndExtractMetadata } from './validation';
 import { insertBook, deleteBook, logAuditEvent } from './service';
 import { createAdminClient } from '@/lib/supabase/server';
 
@@ -15,10 +15,10 @@ export interface BookActionResult {
 }
 
 /**
- * Server action to process an EPUB upload:
+ * Server action to process an EPUB or PDF upload:
  * - Validates tenant admin authorization
- * - Inspects EPUB container, verifies metadata & integrity
- * - Uploads EPUB and cover assets to private Supabase Storage
+ * - Inspects document container, verifies metadata & integrity
+ * - Uploads document and cover assets to private Supabase Storage
  * - Persists record in public.books and emits audit event
  */
 export async function uploadBookAction(
@@ -45,7 +45,7 @@ export async function uploadBookAction(
 
     const file = formData.get('file') as File | null;
     if (!file || !(file instanceof File) || file.size === 0) {
-      return { error: 'Please select a valid EPUB file to upload.' };
+      return { error: 'Please select a valid EPUB or PDF file to upload.' };
     }
 
     // 1. Basic extension & size check
@@ -54,32 +54,35 @@ export async function uploadBookAction(
       return { error: basicValidation.error };
     }
 
-    // 2. Read file buffer & perform deep EPUB inspection
+    // 2. Read file buffer & perform document inspection
     const arrayBuffer = await file.arrayBuffer();
-    const deepValidation = await validateAndExtractEpubMetadata(arrayBuffer);
+    const deepValidation = await validateAndExtractMetadata(file.name, arrayBuffer, file.type);
     if (!deepValidation.isValid || !deepValidation.metadata) {
-      return { error: deepValidation.error || 'EPUB validation failed.' };
+      return { error: deepValidation.error || 'Document validation failed.' };
     }
 
     const { metadata } = deepValidation;
     const manualTitle = (formData.get('title') as string)?.trim();
     const manualAuthor = (formData.get('author') as string)?.trim();
     const manualDescription = (formData.get('description') as string)?.trim();
+    const clientCoverDataUrl = (formData.get('coverDataUrl') as string)?.trim();
 
-    const title = manualTitle || metadata.title || 'Untitled Book';
+    const title = manualTitle || metadata.title || 'Untitled Document';
     const author = manualAuthor || metadata.author || null;
     const description = manualDescription || metadata.description || null;
+    const format = metadata.format || 'epub';
 
     const bookId = crypto.randomUUID();
-    const storagePath = `${tenantId}/${bookId}.epub`;
+    const storagePath = `${tenantId}/${bookId}.${format}`;
 
     const admin = createAdminClient();
 
-    // 3. Upload EPUB binary to private Supabase storage
+    // 3. Upload document binary to private Supabase storage
+    const contentType = format === 'pdf' ? 'application/pdf' : 'application/epub+zip';
     const { error: uploadError } = await admin.storage
       .from('books')
       .upload(storagePath, Buffer.from(arrayBuffer), {
-        contentType: 'application/epub+zip',
+        contentType,
         upsert: true,
       });
 
@@ -101,6 +104,8 @@ export async function uploadBookAction(
       if (!coverUploadError) {
         coverUrl = coverPath;
       }
+    } else if (clientCoverDataUrl) {
+      coverUrl = clientCoverDataUrl;
     } else if (metadata.coverDataUrl) {
       coverUrl = metadata.coverDataUrl;
     }
@@ -114,7 +119,7 @@ export async function uploadBookAction(
       coverUrl,
       storagePath,
       fileSize: file.size,
-      format: 'epub',
+      format,
       processingStatus: 'ready',
     });
 

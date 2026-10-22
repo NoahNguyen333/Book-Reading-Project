@@ -1,53 +1,193 @@
 import JSZip from 'jszip';
 
-export const MAX_EPUB_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+export const MAX_EPUB_FILE_SIZE = MAX_FILE_SIZE; // Alias for backward compatibility
 
-export interface EpubMetadata {
+export type SupportedFormat = 'epub' | 'pdf';
+
+export interface BookMetadata {
   title: string;
   author?: string;
   description?: string;
+  format: SupportedFormat;
+  pageCount?: number;
   coverHref?: string;
   coverDataUrl?: string;
   coverBuffer?: Uint8Array;
   coverMediaType?: string;
 }
 
+export type EpubMetadata = BookMetadata; // Backward compatibility alias
+
 export interface ValidationResult {
   isValid: boolean;
   error?: string;
-  metadata?: EpubMetadata;
+  metadata?: BookMetadata;
 }
 
 /**
- * Validates a file's size and extension prior to deep archive analysis.
+ * Validates file size and format extension (.epub, .pdf).
  */
 export function validateFileBasics(
   fileName: string,
   fileSize: number,
   mimeType?: string
-): { isValid: boolean; error?: string } {
-  if (fileSize > MAX_EPUB_FILE_SIZE) {
+): { isValid: boolean; format?: SupportedFormat; error?: string } {
+  if (fileSize > MAX_FILE_SIZE) {
     return {
       isValid: false,
       error: `File size exceeds the 50 MB limit (current: ${(fileSize / (1024 * 1024)).toFixed(2)} MB).`,
     };
   }
 
-  if (!fileName.toLowerCase().endsWith('.epub')) {
+  const lowerName = fileName.toLowerCase();
+  let format: SupportedFormat | null = null;
+  if (lowerName.endsWith('.epub')) {
+    format = 'epub';
+  } else if (lowerName.endsWith('.pdf')) {
+    format = 'pdf';
+  }
+
+  if (!format) {
     return {
       isValid: false,
-      error: 'Invalid file extension. Only .epub files are supported.',
+      error: 'Invalid file extension. Only .epub and .pdf files are supported.',
     };
   }
 
-  if (mimeType && mimeType !== 'application/epub+zip' && mimeType !== 'application/zip' && mimeType !== 'application/octet-stream') {
-    return {
-      isValid: false,
-      error: `Invalid MIME type (${mimeType}). Expected application/epub+zip.`,
-    };
+  if (mimeType) {
+    const validMimes = [
+      'application/epub+zip',
+      'application/pdf',
+      'application/x-pdf',
+      'application/zip',
+      'application/octet-stream',
+    ];
+    if (!validMimes.includes(mimeType)) {
+      return {
+        isValid: false,
+        error: `Invalid MIME type (${mimeType}). Expected EPUB or PDF.`,
+      };
+    }
   }
 
-  return { isValid: true };
+  return { isValid: true, format };
+}
+
+/**
+ * Inspects a PDF buffer, verifies the %PDF- header, extracts metadata,
+ * calculates page count, and creates a first-page cover thumbnail if canvas is available.
+ */
+export async function validateAndExtractPdfMetadata(
+  data: ArrayBuffer | Uint8Array | Buffer,
+  fileName?: string
+): Promise<ValidationResult> {
+  try {
+    const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+
+    // 1. Verify %PDF- magic signature in the first 1024 bytes
+    const headerSlice = uint8.slice(0, Math.min(uint8.length, 1024));
+    const headerStr = new TextDecoder('latin1').decode(headerSlice);
+
+    if (!headerStr.includes('%PDF-')) {
+      return {
+        isValid: false,
+        error: 'Invalid or corrupt PDF: missing "%PDF-" header signature.',
+      };
+    }
+
+    // 2. Extract metadata from PDF trailer/catalog using binary text search
+    // We inspect the head (first 64KB) and tail (last 64KB) where trailer & Info dicts live
+    const headText = new TextDecoder('latin1').decode(uint8.slice(0, Math.min(uint8.length, 65536)));
+    const tailOffset = Math.max(0, uint8.length - 65536);
+    const tailText = new TextDecoder('latin1').decode(uint8.slice(tailOffset));
+    const combinedText = headText + '\n' + tailText;
+
+    let title: string | undefined;
+    let author: string | undefined;
+
+    // Regex for PDF string literals: /Title (string) or /Title <hex>
+    const titleMatch = combinedText.match(/\/Title\s*(?:\(([^)]+)\)|<([0-9a-fA-F]+)>)/i);
+    if (titleMatch) {
+      if (titleMatch[1]) {
+        title = sanitizePdfString(titleMatch[1]);
+      } else if (titleMatch[2]) {
+        title = decodeHexPdfString(titleMatch[2]);
+      }
+    }
+
+    const authorMatch = combinedText.match(/\/Author\s*(?:\(([^)]+)\)|<([0-9a-fA-F]+)>)/i);
+    if (authorMatch) {
+      if (authorMatch[1]) {
+        author = sanitizePdfString(authorMatch[1]);
+      } else if (authorMatch[2]) {
+        author = decodeHexPdfString(authorMatch[2]);
+      }
+    }
+
+    // Fallback title to sanitized file name
+    if (!title || !title.trim()) {
+      title = sanitizeFilenameTitle(fileName || 'Untitled Document');
+    }
+
+    // 3. Page count calculation (from /Type /Pages /Count N or /Type /Page occurrences)
+    let pageCount: number | undefined;
+    const countMatch = combinedText.match(/\/Type\s*\/Pages[^>]*\/Count\s+(\d+)/i) ||
+                       combinedText.match(/\/Count\s+(\d+)[^>]*\/Type\s*\/Pages/i);
+    if (countMatch && countMatch[1]) {
+      pageCount = parseInt(countMatch[1], 10);
+    } else {
+      // Fallback count occurrences of "/Type /Page"
+      const fullText = new TextDecoder('latin1').decode(uint8);
+      const pageMatches = fullText.match(/\/Type\s*\/Page\b/g);
+      pageCount = pageMatches ? pageMatches.length : 1;
+    }
+
+    // 4. Client-side canvas thumbnail generation (if in browser environment)
+    let coverDataUrl: string | undefined;
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      try {
+        const pdfjs = await import('pdfjs-dist');
+        if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+        }
+        const loadingTask = pdfjs.getDocument({ data: uint8 });
+        const pdfDoc = await loadingTask.promise;
+        if (pdfDoc.numPages > 0) {
+          pageCount = pdfDoc.numPages;
+          const page = await pdfDoc.getPage(1);
+          const viewport = page.getViewport({ scale: 0.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            // @ts-expect-error pdfjs canvas rendering parameters
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            coverDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          }
+        }
+      } catch {
+        // Thumbnail generation is optional; continue without error
+      }
+    }
+
+    return {
+      isValid: true,
+      metadata: {
+        title,
+        author: author || undefined,
+        format: 'pdf',
+        pageCount: pageCount || 1,
+        coverDataUrl,
+      },
+    };
+  } catch (err) {
+    return {
+      isValid: false,
+      error: `Failed to inspect PDF document: ${err instanceof Error ? err.message : 'Corrupt PDF structure'}`,
+    };
+  }
 }
 
 /**
@@ -156,7 +296,6 @@ export async function validateAndExtractEpubMetadata(
     let coverBuffer: Uint8Array | undefined;
 
     if (coverHref) {
-      // Decode URI components in case href is URL-encoded
       const cleanHref = decodeURIComponent(coverHref);
       const fullCoverPath = opfDir + cleanHref;
       const coverZipFile = zip.file(fullCoverPath) || zip.file(cleanHref);
@@ -174,6 +313,7 @@ export async function validateAndExtractEpubMetadata(
         title,
         author,
         description,
+        format: 'epub',
         coverHref,
         coverDataUrl,
         coverBuffer,
@@ -188,6 +328,29 @@ export async function validateAndExtractEpubMetadata(
   }
 }
 
+/**
+ * Unified metadata extraction router:
+ * Automatically routes to PDF or EPUB extractor based on file extension / MIME type.
+ */
+export async function validateAndExtractMetadata(
+  fileName: string,
+  buffer: ArrayBuffer | Uint8Array | Buffer,
+  mimeType?: string
+): Promise<ValidationResult> {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.pdf') || mimeType === 'application/pdf') {
+    return validateAndExtractPdfMetadata(buffer, fileName);
+  }
+  if (lower.endsWith('.epub') || mimeType === 'application/epub+zip') {
+    return validateAndExtractEpubMetadata(buffer);
+  }
+
+  return {
+    isValid: false,
+    error: 'Unsupported document format. Only .epub and .pdf are supported.',
+  };
+}
+
 function cleanXmlText(text: string): string {
   return text
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -198,6 +361,31 @@ function cleanXmlText(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .trim();
+}
+
+function sanitizePdfString(str: string): string {
+  return str.replace(/\\([()\\])/g, '$1').trim();
+}
+
+function decodeHexPdfString(hex: string): string {
+  try {
+    let result = '';
+    for (let i = 0; i < hex.length; i += 2) {
+      result += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    }
+    return result.trim();
+  } catch {
+    return hex;
+  }
+}
+
+function sanitizeFilenameTitle(filename: string): string {
+  const base = filename.replace(/\.[^/.]+$/, ''); // Remove extension
+  return base
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function escapeRegExp(string: string) {

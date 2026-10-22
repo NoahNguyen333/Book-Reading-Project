@@ -3,6 +3,7 @@
 import React from 'react';
 import { useBookLoader } from '../hooks/useBookLoader';
 import { EpubReader } from './EpubReader';
+import { PdfReader } from './PdfReader';
 import { Bookmark } from '../types';
 import { Loader2, AlertCircle, HardDrive, CloudDownload } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -13,6 +14,7 @@ interface ReaderContainerProps {
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
   bookTitle?: string;
+  format?: string;
 }
 
 export function ReaderContainer({
@@ -21,6 +23,7 @@ export function ReaderContainer({
   initialCfi,
   initialBookmarks = [],
   bookTitle,
+  format = 'epub',
 }: ReaderContainerProps) {
   const { bookData, isLoading, error, source, progress } = useBookLoader(bookId, tenantId);
 
@@ -89,6 +92,18 @@ export function ReaderContainer({
           </Button>
         </div>
       </div>
+    );
+  }
+
+  if (format === 'pdf') {
+    return (
+      <PdfReader
+        bookData={bookData}
+        bookId={bookId}
+        tenantId={tenantId}
+        initialCfi={initialCfi}
+        initialBookmarks={initialBookmarks}
+      />
     );
   }
 

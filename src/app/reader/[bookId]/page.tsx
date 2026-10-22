@@ -91,6 +91,7 @@ export default async function ReaderPage({ params }: ReaderPageProps) {
           initialCfi={progress?.cfi ?? null}
           initialBookmarks={bookmarks}
           bookTitle={book.title}
+          format={book.format}
         />
       </main>
     </div>

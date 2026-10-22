@@ -3,7 +3,7 @@
 import React, { useState, useTransition, useRef } from 'react';
 import { Button } from '@/components/ui';
 import { Upload, X, FileText, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
-import { validateFileBasics, validateAndExtractEpubMetadata, EpubMetadata } from '../validation';
+import { validateFileBasics, validateAndExtractMetadata, BookMetadata } from '../validation';
 import { uploadBookAction } from '../actions';
 
 interface BookUploadModalProps {
@@ -14,7 +14,7 @@ interface BookUploadModalProps {
 
 export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [extractedMetadata, setExtractedMetadata] = useState<EpubMetadata | null>(null);
+  const [extractedMetadata, setExtractedMetadata] = useState<BookMetadata | null>(null);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [description, setDescription] = useState('');
@@ -38,7 +38,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
     setIsParsing(true);
     try {
       const buffer = await selectedFile.arrayBuffer();
-      const result = await validateAndExtractEpubMetadata(buffer);
+      const result = await validateAndExtractMetadata(selectedFile.name, buffer, selectedFile.type);
 
       if (result.isValid && result.metadata) {
         setExtractedMetadata(result.metadata);
@@ -46,7 +46,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
         setAuthor(result.metadata.author || '');
         setDescription(result.metadata.description || '');
       } else {
-        setError(result.error || 'Unable to parse EPUB container.');
+        setError(result.error || 'Unable to parse document.');
       }
     } catch (err) {
       setError(`Failed to inspect file: ${err instanceof Error ? err.message : 'Error'}`);
@@ -65,7 +65,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError('Please select an EPUB file.');
+      setError('Please select an EPUB or PDF file.');
       return;
     }
 
@@ -77,6 +77,9 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
       formData.append('title', title);
       formData.append('author', author);
       formData.append('description', description);
+      if (extractedMetadata?.coverDataUrl) {
+        formData.append('coverDataUrl', extractedMetadata.coverDataUrl);
+      }
 
       const res = await uploadBookAction(null, formData);
       if (res.error) {
@@ -104,7 +107,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">Upload Book</h2>
-              <p className="text-xs text-gray-500">EPUB format (up to 50 MB)</p>
+              <p className="text-xs text-gray-500">EPUB or PDF format (up to 50 MB)</p>
             </div>
           </div>
           <button
@@ -136,7 +139,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
             <input
               ref={fileInputRef}
               type="file"
-              accept=".epub,application/epub+zip"
+              accept=".epub,.pdf,application/epub+zip,application/pdf"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
@@ -161,10 +164,10 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
               <div className="space-y-2">
                 <Upload className="w-8 h-8 text-gray-400 mx-auto" />
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Drag and drop an EPUB file here, or{' '}
+                  Drag and drop an EPUB or PDF file here, or{' '}
                   <span className="text-blue-600 dark:text-blue-400 underline">browse</span>
                 </p>
-                <p className="text-xs text-gray-400">Standard EPUB 2 or EPUB 3 archives</p>
+                <p className="text-xs text-gray-400">Standard EPUB books or PDF documents</p>
               </div>
             )}
           </div>
@@ -173,7 +176,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
           {isParsing && (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs font-medium">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Analyzing EPUB structure and extracting metadata...</span>
+              <span>Analyzing document structure and extracting metadata...</span>
             </div>
           )}
 
