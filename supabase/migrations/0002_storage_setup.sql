@@ -11,12 +11,12 @@ VALUES (
   'books',
   false,
   52428800, -- 50 MB
-  ARRAY['application/epub+zip', 'image/jpeg', 'image/png', 'image/webp']
+  ARRAY['application/epub+zip', 'application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 )
 ON CONFLICT (id) DO UPDATE SET
   public = false,
   file_size_limit = 52428800,
-  allowed_mime_types = ARRAY['application/epub+zip', 'image/jpeg', 'image/png', 'image/webp'];
+  allowed_mime_types = ARRAY['application/epub+zip', 'application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
 -- 2. Storage Objects Row-Level Security Policies
 -- Path convention: {tenant_id}/{filename}

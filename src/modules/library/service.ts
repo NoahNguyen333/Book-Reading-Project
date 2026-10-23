@@ -119,6 +119,7 @@ export async function getTenantBooks(tenantId: string): Promise<Book[]> {
  */
 export async function insertBook(
   bookData: {
+    id?: string;
     tenantId: string;
     title: string;
     author?: string | null;
@@ -132,19 +133,22 @@ export async function insertBook(
 ): Promise<Book> {
   const supabase = await createClient();
 
+  const insertPayload = {
+    ...(bookData.id ? { id: bookData.id } : {}),
+    tenant_id: bookData.tenantId,
+    title: bookData.title,
+    author: bookData.author || null,
+    description: bookData.description || null,
+    cover_url: bookData.coverUrl || null,
+    storage_path: bookData.storagePath,
+    file_size: bookData.fileSize,
+    format: bookData.format || 'epub',
+    processing_status: bookData.processingStatus || 'ready',
+  };
+
   const { data, error } = await supabase
     .from('books')
-    .insert({
-      tenant_id: bookData.tenantId,
-      title: bookData.title,
-      author: bookData.author || null,
-      description: bookData.description || null,
-      cover_url: bookData.coverUrl || null,
-      storage_path: bookData.storagePath,
-      file_size: bookData.fileSize,
-      format: bookData.format || 'epub',
-      processing_status: bookData.processingStatus || 'ready',
-    })
+    .insert(insertPayload)
     .select('*')
     .single();
 
@@ -153,17 +157,7 @@ export async function insertBook(
     const admin = createAdminClient();
     const { data: adminData, error: adminError } = await admin
       .from('books')
-      .insert({
-        tenant_id: bookData.tenantId,
-        title: bookData.title,
-        author: bookData.author || null,
-        description: bookData.description || null,
-        cover_url: bookData.coverUrl || null,
-        storage_path: bookData.storagePath,
-        file_size: bookData.fileSize,
-        format: bookData.format || 'epub',
-        processing_status: bookData.processingStatus || 'ready',
-      })
+      .insert(insertPayload)
       .select('*')
       .single();
 

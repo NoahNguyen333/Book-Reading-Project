@@ -48,7 +48,16 @@
      * Smooth swipe gestures: Horizontal swipe detection (> 50px delta with < 60px vertical drift within 500ms) with text selection collision safeguards.
      * Mobile drawer adjustments: Full-width slide-over drawer on small viewports (`w-full sm:w-96`, `z-50`) with clean close buttons and mobile header.
 
-5. **Testing & Build Verification**:
+5. **Direct-to-Storage Upload Refactor (Vercel 4.5MB Payload Limit Bypass)**:
+   - Root cause: Vercel Serverless Functions enforce a strict 4.5 MB request payload ceiling on Server Actions, causing HTTP 413 errors on book uploads over ~4 MB.
+   - Refactored [`src/modules/library/components/BookUploadModal.tsx`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/components/BookUploadModal.tsx):
+     * Implemented direct client-to-storage binary upload using Supabase browser client, bypassing Vercel's proxy completely and supporting files up to 50 MB.
+     * Uploads document file and extracted cover thumbnail directly to `books` bucket under `{tenantId}/{bookId}.{format}`.
+   - Authored lightweight Server Action `registerUploadedBookAction` in [`src/modules/library/actions.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/library/actions.ts):
+     * Transmits only string metadata (`title`, `author`, `format`, `storagePath`, `coverPath`, `fileSize`, `pageCount`) in a < 2 KB payload.
+     * Enforces tenant admin authorization, inserts record via `insertBook`, and emits audit log.
+
+6. **Testing & Build Verification**:
    - Added unit test suite [`src/modules/reader/__tests__/comments.test.ts`](file:///C:/Users/Admin/Book-Reading-Project/src/modules/reader/__tests__/comments.test.ts) (20 tests) verifying validation, permission rules, relative time formatting, and avatar initials.
    - Total unit tests passing: **128 / 128** across 11 test suites.
    - Verified zero TypeScript (`tsc --noEmit`) and ESLint errors with `npm run typecheck` and `npm run build`.

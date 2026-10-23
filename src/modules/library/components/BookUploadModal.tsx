@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useTransition, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui';
 import { Upload, X, FileText, Loader2, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { validateFileBasics, validateAndExtractMetadata, BookMetadata } from '../validation';
-import { uploadBookAction } from '../actions';
+import { registerUploadedBookAction } from '../actions';
 
 interface BookUploadModalProps {
   isOpen: boolean;
@@ -19,8 +20,9 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
   const [author, setAuthor] = useState('');
   const [description, setDescription] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -62,7 +64,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
       setError('Please select an EPUB or PDF file.');
@@ -70,18 +72,71 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
     }
 
     setError(null);
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.append('tenantId', tenantId);
-      formData.append('file', file);
-      formData.append('title', title);
-      formData.append('author', author);
-      formData.append('description', description);
-      if (extractedMetadata?.coverDataUrl) {
-        formData.append('coverDataUrl', extractedMetadata.coverDataUrl);
+    setIsUploading(true);
+
+    try {
+      const format =
+        extractedMetadata?.format ||
+        (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'epub');
+      const bookId = crypto.randomUUID();
+      const storagePath = `${tenantId}/${bookId}.${format}`;
+
+      setUploadStatus('Uploading file directly to secure vault...');
+      const supabase = createClient();
+      const contentType =
+        file.type || (format === 'pdf' ? 'application/pdf' : 'application/epub+zip');
+
+      // 1. Direct client-to-storage upload (bypasses Vercel 4.5MB Serverless Function ceiling)
+      const { error: storageError } = await supabase.storage
+        .from('books')
+        .upload(storagePath, file, {
+          contentType,
+          upsert: true,
+        });
+
+      if (storageError) {
+        setError(`Storage upload failed: ${storageError.message}`);
+        setIsUploading(false);
+        setUploadStatus(null);
+        return;
       }
 
-      const res = await uploadBookAction(null, formData);
+      // 2. Direct cover upload to storage if thumbnail was extracted
+      let coverPath: string | null = null;
+      if (extractedMetadata?.coverDataUrl) {
+        try {
+          setUploadStatus('Saving cover preview...');
+          const coverBlob = await (await fetch(extractedMetadata.coverDataUrl)).blob();
+          const cPath = `${tenantId}/${bookId}-cover.jpg`;
+          const { error: coverErr } = await supabase.storage
+            .from('books')
+            .upload(cPath, coverBlob, {
+              contentType: 'image/jpeg',
+              upsert: true,
+            });
+          if (!coverErr) {
+            coverPath = cPath;
+          }
+        } catch {
+          // Non-fatal if cover thumbnail upload encounters an issue
+        }
+      }
+
+      // 3. Lightweight Server Action (< 2KB string metadata only)
+      setUploadStatus('Registering book in family catalog...');
+      const res = await registerUploadedBookAction({
+        tenantId,
+        bookId,
+        title: title.trim() || extractedMetadata?.title || 'Untitled Document',
+        author: author.trim() || extractedMetadata?.author || null,
+        description: description.trim() || extractedMetadata?.description || null,
+        format,
+        storagePath,
+        coverPath,
+        fileSize: file.size,
+        pageCount: extractedMetadata?.pageCount || null,
+      });
+
       if (res.error) {
         setError(res.error);
       } else {
@@ -93,7 +148,14 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
         setDescription('');
         onClose();
       }
-    });
+    } catch (err) {
+      setError(
+        `Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
+    } finally {
+      setIsUploading(false);
+      setUploadStatus(null);
+    }
   };
 
   return (
@@ -257,20 +319,20 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
               variant="outline"
               size="sm"
               onClick={onClose}
-              disabled={isPending}
+              disabled={isUploading}
             >
               Cancel
             </Button>
             <Button
               type="submit"
               size="sm"
-              disabled={isPending || !file || isParsing}
+              disabled={isUploading || !file || isParsing}
               className="gap-2"
             >
-              {isPending ? (
+              {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Uploading to Vault...</span>
+                  <span>{uploadStatus || 'Uploading to Vault...'}</span>
                 </>
               ) : (
                 <>

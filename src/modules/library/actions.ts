@@ -14,6 +14,84 @@ export interface BookActionResult {
   bookId?: string;
 }
 
+export interface RegisterUploadedBookInput {
+  tenantId: string;
+  bookId: string;
+  title: string;
+  author?: string | null;
+  description?: string | null;
+  format: string;
+  storagePath: string;
+  coverPath?: string | null;
+  fileSize: number;
+  pageCount?: number | null;
+}
+
+/**
+ * Lightweight Server Action to register a book whose binary has already been
+ * uploaded directly from client browser to Supabase Storage.
+ * Transmits < 2KB payload, completely bypassing Vercel's 4.5MB Serverless Function ceiling.
+ */
+export async function registerUploadedBookAction(
+  input: RegisterUploadedBookInput
+): Promise<BookActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { error: 'Authentication required to register books.' };
+    }
+
+    const tenantId = input.tenantId?.trim();
+    if (!tenantId) {
+      return { error: 'Missing active tenant identifier.' };
+    }
+
+    // Verify role authorization
+    const memberships = await getUserTenants(user.id);
+    const userRole = findTenantRole(memberships, tenantId);
+    if (!canUploadBooks(userRole)) {
+      return { error: 'Access denied: Only space admins are permitted to register books.' };
+    }
+
+    const title = input.title?.trim() || 'Untitled Document';
+    const author = input.author?.trim() || null;
+    const description = input.description?.trim() || null;
+    const format = input.format || 'epub';
+    const bookId = input.bookId?.trim() || crypto.randomUUID();
+    const storagePath = input.storagePath?.trim() || `${tenantId}/${bookId}.${format}`;
+
+    // Insert record into database
+    await insertBook({
+      id: bookId,
+      tenantId,
+      title,
+      author,
+      description,
+      coverUrl: input.coverPath || null,
+      storagePath,
+      fileSize: input.fileSize || 0,
+      format,
+      processingStatus: 'ready',
+    });
+
+    // Log Audit Event
+    await logAuditEvent(tenantId, user.id, 'BOOK_UPLOADED', {
+      bookId,
+      title,
+      author,
+      fileSize: input.fileSize,
+      format,
+    });
+
+    revalidatePath('/dashboard');
+    return { success: true, bookId };
+  } catch (err) {
+    return {
+      error: `Failed to register book: ${err instanceof Error ? err.message : 'Unknown error'}`,
+    };
+  }
+}
+
 /**
  * Server action to process an EPUB or PDF upload:
  * - Validates tenant admin authorization
