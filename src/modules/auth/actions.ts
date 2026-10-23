@@ -119,3 +119,49 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     return null;
   }
 }
+
+/**
+ * Checks if a given email is the designated Platform Super Admin.
+ */
+export async function isPlatformSuperAdmin(email?: string | null): Promise<boolean> {
+  if (!email) return false;
+  const adminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  if (!adminEmail) return false;
+  return email.trim().toLowerCase() === adminEmail;
+}
+
+/**
+ * Updates the user's display name.
+ */
+export async function updateUserProfileNameAction(
+  fullName: string
+): Promise<{ success?: boolean; error?: string }> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { error: 'Vui lòng đăng nhập.' };
+    }
+
+    const trimmed = fullName?.trim();
+    if (!trimmed) {
+      return { error: 'Tên không được để trống.' };
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.auth.updateUser({
+      data: { full_name: trimmed },
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    revalidatePath('/dashboard');
+    revalidatePath('/', 'layout');
+    return { success: true };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : 'Lỗi cập nhật tên',
+    };
+  }
+}

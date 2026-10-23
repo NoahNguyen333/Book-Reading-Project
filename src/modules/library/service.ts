@@ -2,20 +2,20 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { Book, ActiveReadingItem } from './types';
 
 /**
- * Retrieves the user's active reading progress records joined with books for a tenant.
+ * Retrieves the user's active reading progress records joined with books.
  * Filters for percentage > 0, ordered from most recently read to least recently read.
  */
 export async function getUserActiveReadingList(
-  tenantId: string,
-  userId: string
+  tenantIdOrUserId: string,
+  optionalUserId?: string
 ): Promise<ActiveReadingItem[]> {
+  const actualUserId = optionalUserId || tenantIdOrUserId;
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from('reading_progress')
     .select('id, book_id, percentage, cfi, updated_at, books(*)')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
+    .eq('user_id', actualUserId)
     .gt('percentage', 0)
     .order('updated_at', { ascending: false });
 
@@ -26,8 +26,7 @@ export async function getUserActiveReadingList(
     const { data: adminData, error: adminError } = await admin
       .from('reading_progress')
       .select('id, book_id, percentage, cfi, updated_at, books(*)')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', userId)
+      .eq('user_id', actualUserId)
       .gt('percentage', 0)
       .order('updated_at', { ascending: false });
 
@@ -81,6 +80,31 @@ export async function getUserActiveReadingList(
   }
 
   return items;
+}
+
+/**
+ * Retrieves all books from the central public catalog, ordered from newest to oldest.
+ */
+export async function getAllPublicBooks(): Promise<Book[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('books')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    const admin = createAdminClient();
+    const { data: adminData } = await admin
+      .from('books')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!adminData) return [];
+    return adminData.map(mapDbBookToDomain);
+  }
+
+  return data.map(mapDbBookToDomain);
 }
 
 /**
