@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { getCurrentUser, signOut } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
 import { TenantProvider } from '@/modules/tenant/context';
 import { canUploadBooks } from '@/modules/entitlements';
 import { getTenantBooks } from '@/modules/library/service';
+import { getTenantRooms } from '@/modules/room/service';
 import { BookCatalog } from '@/modules/library/components';
 import { Button } from '@/components/ui';
 import {
@@ -15,6 +17,8 @@ import {
   Home,
   CheckCircle2,
   Users,
+  ArrowRight,
+  Radio,
 } from 'lucide-react';
 
 export const metadata = {
@@ -37,8 +41,11 @@ export default async function DashboardPage() {
   const tenantId = activeMembership?.tenant.id || '';
   const isAdmin = canUploadBooks(activeMembership?.role);
 
-  // Fetch tenant books if active space exists
-  const books = tenantId ? await getTenantBooks(tenantId) : [];
+  // Fetch tenant books & rooms if active space exists
+  const [books, rooms] = await Promise.all([
+    tenantId ? getTenantBooks(tenantId) : Promise.resolve([]),
+    tenantId ? getTenantRooms(tenantId) : Promise.resolve([]),
+  ]);
 
   return (
     <TenantProvider
@@ -58,7 +65,14 @@ export default async function DashboardPage() {
               </span>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Link
+                href="/room"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 transition border border-blue-200 dark:border-blue-800"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                <span>Live Rooms ({rooms.length})</span>
+              </Link>
               <form action={signOut}>
                 <Button variant="outline" size="sm" type="submit" className="gap-2">
                   <LogOut className="w-4 h-4" />
@@ -132,22 +146,64 @@ export default async function DashboardPage() {
             />
           </section>
 
-          {/* Quick Actions & Session 4 Preview */}
+          {/* Live Reading Rooms Widget & Device Cache Card */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3">
-              <div className="inline-flex p-2.5 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
-                <Users className="w-5 h-5" />
+            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="inline-flex p-2.5 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                  <Users className="w-5 h-5" />
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{rooms.length} {rooms.length === 1 ? 'Room Active' : 'Rooms Active'}</span>
+                </span>
               </div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Synchronized Reading Rooms
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Join realtime rooms with page turn synchronization, audio/video links, and shared notes.
-              </p>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Live Reading Rooms
+                </h2>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Synchronized multi-room spaces with real-time host page turns, video calls, and isolated progress.
+                </p>
+              </div>
+
+              {rooms.length > 0 ? (
+                <div className="space-y-2 pt-1">
+                  {rooms.slice(0, 2).map((room) => (
+                    <div
+                      key={room.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 text-xs"
+                    >
+                      <div className="truncate mr-2">
+                        <div className="font-semibold text-gray-900 dark:text-white truncate">
+                          {room.title}
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {room.activeBook ? room.activeBook.title : 'No active book'}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/room/${room.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] shrink-0 transition"
+                      >
+                        <span>Join</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 italic">No reading rooms active right now.</p>
+              )}
+
               <div className="pt-2">
-                <Button variant="outline" size="sm" disabled className="opacity-70 cursor-not-allowed">
-                  Coming in Session 4
-                </Button>
+                <Link
+                  href="/room"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-semibold text-xs border border-purple-200 dark:border-purple-800 transition"
+                >
+                  <span>Open Rooms Lobby</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
               </div>
             </div>
 

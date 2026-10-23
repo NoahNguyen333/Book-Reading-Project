@@ -33,6 +33,9 @@ interface PdfReaderProps {
   tenantId: string;
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
+  externalLocation?: string | null;
+  onLocationChange?: (location: string, percentage: number) => void;
+  disableProgressSave?: boolean;
 }
 
 export function PdfReader({
@@ -41,11 +44,19 @@ export function PdfReader({
   tenantId,
   initialCfi,
   initialBookmarks = [],
+  externalLocation,
+  onLocationChange,
+  disableProgressSave = false,
 }: PdfReaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   const currentRenderTaskRef = useRef<RenderTask | null>(null);
+
+  const onLocationChangeRef = useRef(onLocationChange);
+  onLocationChangeRef.current = onLocationChange;
+  const disableProgressSaveRef = useRef(disableProgressSave);
+  disableProgressSaveRef.current = disableProgressSave;
 
   // Pagination & Zoom
   const initialPage = parsePageFromCfi(initialCfi) || 1;
@@ -176,11 +187,28 @@ export function PdfReader({
     []
   );
 
+  // Sync with External Location (e.g. host page turns in reading room)
+  useEffect(() => {
+    if (!externalLocation) return;
+    const targetPage = parsePageFromCfi(externalLocation);
+    if (targetPage && targetPage !== currentPage && targetPage >= 1 && targetPage <= totalPages) {
+      setCurrentPage(targetPage);
+    }
+  }, [externalLocation, totalPages, currentPage]);
+
   useEffect(() => {
     if (!isDocumentLoading && pdfDocRef.current) {
       renderPage(currentPage, zoom);
       setInputPage(String(currentPage));
-      syncProgressDebounced(currentPage, totalPages);
+
+      if (!disableProgressSaveRef.current) {
+        syncProgressDebounced(currentPage, totalPages);
+      }
+
+      if (onLocationChangeRef.current && totalPages > 0) {
+        const pct = calculatePagePercentage(currentPage, totalPages);
+        onLocationChangeRef.current(formatPageCfi(currentPage), pct);
+      }
     }
   }, [currentPage, zoom, isDocumentLoading, totalPages, renderPage, syncProgressDebounced]);
 

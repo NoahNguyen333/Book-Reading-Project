@@ -15,6 +15,9 @@ interface ReaderContainerProps {
   initialBookmarks?: Bookmark[];
   bookTitle?: string;
   format?: string;
+  externalLocation?: string | null;
+  onLocationChange?: (location: string, percentage: number) => void;
+  disableProgressSave?: boolean;
 }
 
 export function ReaderContainer({
@@ -24,6 +27,9 @@ export function ReaderContainer({
   initialBookmarks = [],
   bookTitle,
   format = 'epub',
+  externalLocation,
+  onLocationChange,
+  disableProgressSave = false,
 }: ReaderContainerProps) {
   const { bookData, isLoading, error, source, progress } = useBookLoader(bookId, tenantId);
 
@@ -103,6 +109,9 @@ export function ReaderContainer({
         tenantId={tenantId}
         initialCfi={initialCfi}
         initialBookmarks={initialBookmarks}
+        externalLocation={externalLocation}
+        onLocationChange={onLocationChange}
+        disableProgressSave={disableProgressSave}
       />
     );
   }
@@ -114,6 +123,9 @@ export function ReaderContainer({
       tenantId={tenantId}
       initialCfi={initialCfi}
       initialBookmarks={initialBookmarks}
+      externalLocation={externalLocation}
+      onLocationChange={onLocationChange}
+      disableProgressSave={disableProgressSave}
     />
   );
 }

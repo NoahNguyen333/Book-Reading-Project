@@ -31,6 +31,9 @@ interface EpubReaderProps {
   tenantId: string;
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
+  externalLocation?: string | null;
+  onLocationChange?: (location: string, percentage: number) => void;
+  disableProgressSave?: boolean;
 }
 
 export function EpubReader({
@@ -39,10 +42,18 @@ export function EpubReader({
   tenantId,
   initialCfi,
   initialBookmarks = [],
+  externalLocation,
+  onLocationChange,
+  disableProgressSave = false,
 }: EpubReaderProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<Book | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
+
+  const onLocationChangeRef = useRef(onLocationChange);
+  onLocationChangeRef.current = onLocationChange;
+  const disableProgressSaveRef = useRef(disableProgressSave);
+  disableProgressSaveRef.current = disableProgressSave;
 
   // Reader State
   const [currentCfi, setCurrentCfi] = useState<string>(initialCfi || '');
@@ -136,7 +147,13 @@ export function EpubReader({
         setPercentage(pct);
       }
 
-      syncProgressDebounced(cfi, pct);
+      if (onLocationChangeRef.current) {
+        onLocationChangeRef.current(cfi, pct);
+      }
+
+      if (!disableProgressSaveRef.current) {
+        syncProgressDebounced(cfi, pct);
+      }
     });
 
     // Cleanup on unmount
@@ -152,6 +169,14 @@ export function EpubReader({
       }
     };
   }, [bookData, initialCfi, syncProgressDebounced]);
+
+  // Sync with External Location (e.g. host page turns in reading room)
+  useEffect(() => {
+    if (!externalLocation || !renditionRef.current) return;
+    if (externalLocation !== currentCfi) {
+      renditionRef.current.display(externalLocation);
+    }
+  }, [externalLocation, currentCfi]);
 
   // Handle Theme Change
   useEffect(() => {
