@@ -52,26 +52,26 @@ export function BookRequestModal({ isOpen, onClose }: BookRequestModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl shadow-xl border border-[#E6E1D6] dark:border-[#2B2A26] p-6 space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-4">
+        <div className="flex items-center justify-between border-b border-[#E6E1D6] dark:border-[#2B2A26] pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
+            <div className="p-2 rounded-xl bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C] border border-[#F4D3C7] dark:border-[#3E2822]">
               <BookPlus className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">
+              <h2 className="font-serif text-base font-bold text-[#23211E] dark:text-[#EDE9E1]">
                 Yêu cầu thêm sách
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-[#706B63] dark:text-[#999388]">
                 Gửi yêu cầu tới Platform Super Admin
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+            className="p-1 rounded-lg text-[#706B63] hover:text-[#23211E] dark:hover:text-[#EDE9E1] transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -79,11 +79,11 @@ export function BookRequestModal({ isOpen, onClose }: BookRequestModalProps) {
 
         {isSuccess ? (
           <div className="p-6 text-center space-y-3">
-            <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto animate-bounce" />
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+            <CheckCircle2 className="w-12 h-12 text-[#5B7065] dark:text-[#8FA196] mx-auto animate-bounce" />
+            <h3 className="font-serif text-sm font-bold text-[#23211E] dark:text-[#EDE9E1]">
               Đã gửi yêu cầu thành công!
             </h3>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[#706B63] dark:text-[#999388]">
               Admin sẽ sớm cập nhật cuốn sách &ldquo;{title}&rdquo; vào kho thư viện.
             </p>
           </div>
@@ -96,46 +96,46 @@ export function BookRequestModal({ isOpen, onClose }: BookRequestModalProps) {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Tiêu đề sách <span className="text-red-500">*</span>
+              <label className="block text-xs font-semibold text-[#23211E] dark:text-[#EDE9E1] mb-1">
+                Tiêu đề sách <span className="text-[#C25E38]">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ví dụ: Đắc Nhân Tâm, Atomic Habits..."
-                className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="VD: Dế Mèn Phiêu Lưu Ký, Atomic Habits..."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#F7F4EE] dark:bg-[#161614] text-[#23211E] dark:text-[#EDE9E1] focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Tác giả (nếu biết)
+              <label className="block text-xs font-semibold text-[#23211E] dark:text-[#EDE9E1] mb-1">
+                Tác giả (tùy chọn)
               </label>
               <input
                 type="text"
                 value={author}
                 onChange={(e) => setAuthor(e.target.value)}
-                placeholder="Ví dụ: Dale Carnegie"
-                className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="VD: Tô Hoài, James Clear..."
+                className="w-full px-3 py-2 text-xs rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#F7F4EE] dark:bg-[#161614] text-[#23211E] dark:text-[#EDE9E1] focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                Ghi chú thêm
+              <label className="block text-xs font-semibold text-[#23211E] dark:text-[#EDE9E1] mb-1">
+                Ghi chú thêm (tùy chọn)
               </label>
               <textarea
                 rows={3}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Link tham khảo, lý do muốn đọc..."
-                className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#F7F4EE] dark:bg-[#161614] text-[#23211E] dark:text-[#EDE9E1] focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38]"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2">
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E6E1D6] dark:border-[#2B2A26]">
               <Button
                 type="button"
                 variant="outline"
@@ -147,9 +147,10 @@ export function BookRequestModal({ isOpen, onClose }: BookRequestModalProps) {
               </Button>
               <Button
                 type="submit"
+                variant="primary"
                 size="sm"
                 disabled={isSubmitting || !title.trim()}
-                className="gap-1.5 bg-purple-600 hover:bg-purple-500 text-white"
+                className="gap-1.5 bg-[#C25E38] hover:bg-[#AF512E] text-white"
               >
                 {isSubmitting ? (
                   <>

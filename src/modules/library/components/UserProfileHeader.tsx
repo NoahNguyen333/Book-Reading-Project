@@ -14,7 +14,6 @@ import {
   ArrowRight,
   Users,
 } from 'lucide-react';
-import { Button } from '@/components/ui';
 import { updateUserProfileNameAction } from '@/modules/auth';
 import { UserFamilyContext } from '@/modules/family/types';
 import { formatFamilyRoleDisplay } from '@/modules/family/utils';
@@ -72,17 +71,17 @@ export function UserProfileHeader({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-5">
-      {/* Top row: Greeting & Status */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="bg-[#FFFFFF] dark:bg-[#20201C] p-5 sm:p-7 rounded-2xl border border-[#E6E1D6] dark:border-[#2B2A26] shadow-xs space-y-4">
+      {/* Top row: Editorial Greeting & Inline Edit */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="space-y-1">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold text-[#23211E] dark:text-[#EDE9E1] tracking-tight">
               Chào mừng trở lại,
             </h1>
 
             {isEditingName ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <input
                   type="text"
                   value={nameInput}
@@ -92,14 +91,14 @@ export function UserProfileHeader({
                     if (e.key === 'Escape') handleCancelEdit();
                   }}
                   disabled={isSaving}
-                  className="px-2.5 py-1 text-lg sm:text-xl font-bold rounded-lg border border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="px-2.5 py-0.5 font-serif text-xl sm:text-2xl font-bold rounded-lg border border-[#C25E38] focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 bg-[#F7F4EE] dark:bg-[#161614] text-[#23211E] dark:text-[#EDE9E1]"
                   autoFocus
                 />
                 <button
                   type="button"
                   onClick={handleSaveName}
                   disabled={isSaving}
-                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+                  className="p-1.5 rounded-lg bg-[#C25E38] hover:bg-[#AF512E] text-white transition disabled:opacity-50"
                   title="Lưu tên"
                 >
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -108,16 +107,16 @@ export function UserProfileHeader({
                   type="button"
                   onClick={handleCancelEdit}
                   disabled={isSaving}
-                  className="p-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition"
+                  className="p-1.5 rounded-lg bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#706B63] dark:text-[#EDE9E1] transition"
                   title="Hủy"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-2xl sm:text-3xl font-extrabold text-blue-600 dark:text-blue-400">
-                  {currentName}!
+              <div className="flex items-center gap-1.5">
+                <span className="font-serif text-2xl sm:text-3xl font-bold text-[#C25E38] dark:text-[#D97750]">
+                  {currentName}
                 </span>
                 <button
                   type="button"
@@ -125,10 +124,10 @@ export function UserProfileHeader({
                     setNameInput(currentName);
                     setIsEditingName(true);
                   }}
-                  className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+                  className="p-1 text-[#706B63] hover:text-[#C25E38] dark:hover:text-[#D97750] rounded-lg hover:bg-[#F7F4EE] dark:hover:bg-[#252420] transition"
                   title="Đổi tên hiển thị"
                 >
-                  <Pencil className="w-4 h-4" />
+                  <Pencil className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
@@ -138,95 +137,70 @@ export function UserProfileHeader({
             <p className="text-xs text-red-600 dark:text-red-400 mt-1">{nameError}</p>
           )}
 
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-            Thư viện cá nhân của bạn, tiếp tục các trang sách dang dở và kết nối đọc cùng gia đình.
+          <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] max-w-2xl leading-relaxed">
+            Góc đọc sách cá nhân của bạn. Tiếp tục các trang sách dang dở hoặc kết nối không gian đọc cùng gia đình.
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 text-xs font-semibold border border-emerald-200 dark:border-emerald-800 w-fit">
-          <CheckCircle2 className="w-4 h-4" />
-          <span>Tài khoản hoạt động</span>
+        {/* Discreet Session Status */}
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFECE4] dark:bg-[#252420] text-[#5B7065] dark:text-[#8FA196] text-xs font-medium border border-[#E0DBD0] dark:border-[#2E2D28] self-start sm:self-auto shrink-0">
+          <CheckCircle2 className="w-3.5 h-3.5 text-[#5B7065] dark:text-[#8FA196]" />
+          <span>Phiên đọc sẵn sàng</span>
         </div>
       </div>
 
-      {/* Info Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-        {/* Email card */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60">
-          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-            <UserIcon className="w-4 h-4" />
-            <span>Email tài khoản</span>
-          </div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-white truncate" title={user.email || ''}>
-            {user.email}
-          </div>
+      {/* Slim Meta Strip: Account, Role, and Family Link */}
+      <div className="flex flex-wrap items-center gap-y-2 gap-x-4 pt-3 border-t border-[#E6E1D6] dark:border-[#2B2A26] text-xs text-[#706B63] dark:text-[#999388]">
+        {/* Email */}
+        <div className="inline-flex items-center gap-1.5 truncate max-w-[240px]">
+          <UserIcon className="w-3.5 h-3.5 text-[#706B63] shrink-0" />
+          <span className="truncate" title={user.email || ''}>{user.email}</span>
         </div>
 
-        {/* System Role card */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60">
-          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-            <Shield className="w-4 h-4" />
-            <span>Vai trò hệ thống</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-bold ${
-                isSuperAdmin
-                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-              }`}
-            >
-              {isSuperAdmin ? 'Platform Super Admin' : 'Độc giả (Reader)'}
-            </span>
-          </div>
+        <span className="text-[#D5D0C5] dark:text-[#3A3833] hidden sm:inline">•</span>
+
+        {/* Role Badge */}
+        <div className="inline-flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5 text-[#706B63] shrink-0" />
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold uppercase tracking-wider ${
+              isSuperAdmin
+                ? 'bg-[#FDF0EC] text-[#C25E38] border border-[#F4D3C7] dark:bg-[#281C18] dark:text-[#E08A6C] dark:border-[#3E2822]'
+                : 'bg-[#EFECE4] text-[#555047] border border-[#E0DBD0] dark:bg-[#282723] dark:text-[#C4BEB3] dark:border-[#34322C]'
+            }`}
+          >
+            {isSuperAdmin ? 'Platform Super Admin' : 'Độc giả'}
+          </span>
         </div>
 
-        {/* Family Affiliation card */}
-        <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/60">
-          <div className="flex items-center justify-between text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wider mb-1">
-            <div className="flex items-center gap-2">
-              <Home className="w-4 h-4" />
-              <span>Gia đình liên kết</span>
-            </div>
+        <span className="text-[#D5D0C5] dark:text-[#3A3833] hidden sm:inline">•</span>
+
+        {/* Family Affiliation */}
+        <div className="inline-flex items-center gap-1.5">
+          <Home className="w-3.5 h-3.5 text-[#706B63] shrink-0" />
+          {familyContext ? (
             <Link
               href="/family"
-              className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-0.5"
+              className="inline-flex items-center gap-1 text-[#23211E] dark:text-[#EDE9E1] hover:text-[#C25E38] dark:hover:text-[#D97750] font-medium transition"
             >
-              Chi tiết <ArrowRight className="w-3 h-3" />
+              <span>{familyContext.family.name}</span>
+              <span className="font-mono text-[10px] bg-[#EFECE4] dark:bg-[#282723] px-1.5 py-0.2 rounded text-[#706B63] dark:text-[#999388]">
+                {familyContext.family.familyCode}
+              </span>
+              <span className="text-[#C25E38] dark:text-[#D97750]">
+                ({formatFamilyRoleDisplay(familyContext.memberRole)})
+              </span>
+              <ArrowRight className="w-3 h-3 text-[#706B63]" />
             </Link>
-          </div>
-
-          {familyContext ? (
-            <div className="space-y-1">
-              <div className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {familyContext.family.name}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-mono bg-gray-200 dark:bg-gray-700 px-1.5 py-0.2 rounded text-[11px]">
-                  {familyContext.family.familyCode}
-                </span>
-                <span>•</span>
-                <span className="text-purple-600 dark:text-purple-400 font-medium">
-                  {formatFamilyRoleDisplay(familyContext.memberRole)}
-                </span>
-              </div>
-            </div>
           ) : (
-            <div className="space-y-1">
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Chưa tham gia gia đình nào
-              </div>
-              <Link href="/family">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-1 h-7 text-xs gap-1 border-dashed border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 w-full"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Tham gia hoặc Tạo gia đình</span>
-                </Button>
-              </Link>
-            </div>
+            <Link
+              href="/family"
+              className="inline-flex items-center gap-1 text-[#C25E38] dark:text-[#D97750] hover:underline font-medium"
+            >
+              <Users className="w-3 h-3" />
+              <span>Chưa tham gia gia đình (Kết nối ngay)</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
           )}
         </div>
       </div>

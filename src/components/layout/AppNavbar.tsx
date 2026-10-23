@@ -49,27 +49,27 @@ export function AppNavbar({
     : 'Reader';
 
   return (
-    <header className="border-b border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md sticky top-0 z-30 transition">
+    <header className="border-b border-[#E6E1D6] dark:border-[#2B2A26] bg-[#F7F4EE]/90 dark:bg-[#161614]/90 backdrop-blur-md sticky top-0 z-30 transition">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Left Section: Brand & Active Space */}
+        {/* Left Section: Brand & Space */}
         <div className="flex items-center gap-3.5 min-w-0">
           <Link
             href="/dashboard"
             className="flex items-center gap-2.5 shrink-0 group focus:outline-none"
           >
-            <div className="p-2 bg-blue-600 text-white rounded-xl shadow-sm group-hover:bg-blue-500 transition">
+            <div className="p-2 bg-[#C25E38] text-white rounded-xl shadow-xs group-hover:bg-[#AF512E] transition">
               <BookOpen className="w-5 h-5" />
             </div>
-            <span className="font-extrabold text-base sm:text-lg text-gray-900 dark:text-white tracking-tight hidden sm:inline-block">
+            <span className="font-serif font-bold text-base sm:text-lg text-[#23211E] dark:text-[#EDE9E1] tracking-tight hidden sm:inline-block">
               Family Reading Room
             </span>
           </Link>
 
-          <div className="hidden md:block h-4 w-px bg-gray-200 dark:border-gray-800" />
+          <div className="hidden md:block h-4 w-px bg-[#E6E1D6] dark:bg-[#2B2A26]" />
 
           {/* Family Space Indicator */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800/80 text-xs font-medium text-gray-700 dark:text-gray-300 border border-gray-200/50 dark:border-gray-700/50 truncate max-w-[200px]">
-            <Home className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EFECE4] dark:bg-[#20201C] text-xs font-medium text-[#555047] dark:text-[#B5AFA4] border border-[#E0DBD0] dark:border-[#2B2A26] truncate max-w-[200px]">
+            <Home className="w-3.5 h-3.5 text-[#706B63] dark:text-[#999388] shrink-0" />
             <span className="truncate">{familyName || tenantName}</span>
           </div>
         </div>
@@ -79,10 +79,10 @@ export function AppNavbar({
           {/* Dashboard / Library */}
           <Link
             href="/dashboard"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
               activePath === '/dashboard'
-                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-[#EAE5D9] text-[#C25E38] dark:bg-[#252420] dark:text-[#D97750] font-semibold shadow-xs'
+                : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1] hover:bg-[#EFECE4] dark:hover:bg-[#20201C]'
             }`}
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -92,10 +92,10 @@ export function AppNavbar({
           {/* Family Hub */}
           <Link
             href="/family"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
               activePath === '/family'
-                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-[#EAE5D9] text-[#C25E38] dark:bg-[#252420] dark:text-[#D97750] font-semibold shadow-xs'
+                : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1] hover:bg-[#EFECE4] dark:hover:bg-[#20201C]'
             }`}
           >
             <Users className="w-4 h-4" />
@@ -105,33 +105,33 @@ export function AppNavbar({
           {/* Notebook */}
           <Link
             href="/notebook"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
               activePath === '/notebook'
-                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-[#EAE5D9] text-[#C25E38] dark:bg-[#252420] dark:text-[#D97750] font-semibold shadow-xs'
+                : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1] hover:bg-[#EFECE4] dark:hover:bg-[#20201C]'
             }`}
           >
-            <BookMarked className="w-4 h-4 text-amber-500" />
+            <BookMarked className="w-4 h-4 text-[#C25E38] dark:text-[#D97750]" />
             <span>Sổ tay</span>
           </Link>
 
           {/* Collaborative Rooms */}
           <Link
             href="/room"
-            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition ${
               activePath.startsWith('/room')
-                ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-[#EAE5D9] text-[#C25E38] dark:bg-[#252420] dark:text-[#D97750] font-semibold shadow-xs'
+                : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1] hover:bg-[#EFECE4] dark:hover:bg-[#20201C]'
             }`}
           >
             <Radio
               className={`w-4 h-4 ${
-                liveRoomsCount > 0 ? 'text-emerald-500 animate-pulse' : 'text-purple-500'
+                liveRoomsCount > 0 ? 'text-[#C25E38] animate-pulse' : 'text-[#706B63]'
               }`}
             />
             <span>Phòng đọc</span>
             {liveRoomsCount > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C] border border-[#F4D3C7] dark:border-[#3E2822]">
                 {liveRoomsCount}
               </span>
             )}
@@ -141,15 +141,15 @@ export function AppNavbar({
         {/* Right Section: User Profile & Role & Sign Out */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="hidden lg:flex flex-col items-end text-right">
-            <span className="text-xs font-bold text-gray-900 dark:text-white truncate max-w-[160px]">
+            <span className="text-xs font-semibold text-[#23211E] dark:text-[#EDE9E1] truncate max-w-[160px]">
               {displayName}
             </span>
             <div className="flex items-center gap-1 text-[10px]">
               <span
                 className={`inline-flex items-center gap-1 font-semibold uppercase px-1.5 py-0.2 rounded text-[9px] ${
                   isSuperAdmin
-                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                    ? 'bg-[#FDF0EC] text-[#C25E38] border border-[#F4D3C7] dark:bg-[#281C18] dark:text-[#E08A6C] dark:border-[#3E2822]'
+                    : 'bg-[#EFECE4] text-[#5B7065] border border-[#D5D0C5] dark:bg-[#20201C] dark:text-[#8FA196] dark:border-[#2E2D28]'
                 }`}
               >
                 <Shield className="w-2.5 h-2.5" />
@@ -163,7 +163,7 @@ export function AppNavbar({
               variant="outline"
               size="sm"
               type="submit"
-              className="gap-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900 transition"
+              className="gap-1.5 text-xs text-[#706B63] dark:text-[#999388] hover:text-red-700 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900 transition"
               title="Đăng xuất"
             >
               <LogOut className="w-3.5 h-3.5" />

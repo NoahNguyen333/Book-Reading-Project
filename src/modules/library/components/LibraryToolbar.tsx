@@ -53,13 +53,13 @@ export function LibraryToolbar({
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
         {/* Search Bar */}
         <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#706B63] dark:text-[#999388]" />
           <input
             type="text"
-            placeholder="Search books, authors, topics..."
+            placeholder="Tìm theo tiêu đề, tác giả..."
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
-            className="w-full pl-9 pr-9 py-2 text-xs sm:text-sm rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            className="w-full pl-9 pr-9 py-2 text-xs sm:text-sm rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#FFFFFF] dark:bg-[#20201C] text-[#23211E] dark:text-[#EDE9E1] placeholder:text-[#706B63]/60 focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38] shadow-xs transition"
           />
           {localInput && (
             <button
@@ -67,8 +67,8 @@ export function LibraryToolbar({
                 setLocalInput('');
                 onSearchChange('');
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-md transition"
-              title="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#706B63] hover:text-[#23211E] dark:hover:text-[#EDE9E1] rounded-md transition"
+              title="Xóa tìm kiếm"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -76,20 +76,20 @@ export function LibraryToolbar({
         </div>
 
         {/* Format Selector Tabs */}
-        <div className="inline-flex items-center p-1 rounded-xl bg-gray-100 dark:bg-gray-800/80 border border-gray-200/60 dark:border-gray-700/60 self-start sm:self-auto shrink-0">
+        <div className="inline-flex items-center p-1 rounded-xl bg-[#EFECE4] dark:bg-[#252420] border border-[#E0DBD0] dark:border-[#2B2A26] self-start sm:self-auto shrink-0">
           {(['all', 'epub', 'pdf'] as FormatFilter[]).map((fmt) => {
             const isActive = selectedFormat === fmt;
             return (
               <button
                 key={fmt}
                 onClick={() => onFormatChange(fmt)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition ${
                   isActive
-                    ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-[#FFFFFF] dark:bg-[#1E1D1A] text-[#C25E38] dark:text-[#D97750] font-semibold shadow-xs'
+                    : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1]'
                 }`}
               >
-                {fmt === 'all' ? 'All Formats' : fmt.toUpperCase()}
+                {fmt === 'all' ? 'Tất cả' : fmt.toUpperCase()}
               </button>
             );
           })}
@@ -98,20 +98,20 @@ export function LibraryToolbar({
 
       {/* Sorting Dropdown & Filter Count */}
       <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-2 text-xs text-[#706B63] dark:text-[#999388]">
           <span className="font-medium">
             {hasActiveFilters
-              ? `${filteredCount} of ${totalCount} books`
-              : `${totalCount} ${totalCount === 1 ? 'book' : 'books'}`}
+              ? `${filteredCount} / ${totalCount} cuốn`
+              : `${totalCount} ${totalCount === 1 ? 'cuốn sách' : 'cuốn sách'}`}
           </span>
           {hasActiveFilters && (
             <>
               <span>•</span>
               <button
                 onClick={onClearFilters}
-                className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                className="text-[#C25E38] dark:text-[#D97750] hover:underline font-semibold"
               >
-                Reset filters
+                Đặt lại bộ lọc
               </button>
             </>
           )}
@@ -119,12 +119,12 @@ export function LibraryToolbar({
 
         {/* Sort Dropdown */}
         <div className="relative flex items-center">
-          <ArrowUpDown className="w-3.5 h-3.5 absolute left-3 pointer-events-none text-gray-400" />
+          <ArrowUpDown className="w-3.5 h-3.5 absolute left-3 pointer-events-none text-[#706B63]" />
           <select
             value={selectedSort}
             onChange={(e) => onSortChange(e.target.value as SortOption)}
-            aria-label="Sort books by"
-            className="pl-8 pr-8 py-2 text-xs rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm appearance-none cursor-pointer"
+            aria-label="Sắp xếp sách theo"
+            className="pl-8 pr-8 py-2 text-xs rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#FFFFFF] dark:bg-[#20201C] text-[#23211E] dark:text-[#EDE9E1] font-medium focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38] shadow-xs appearance-none cursor-pointer"
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>

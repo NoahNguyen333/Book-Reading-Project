@@ -159,22 +159,22 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 p-6 space-y-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl shadow-xl border border-[#E6E1D6] dark:border-[#2B2A26] p-6 space-y-6 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-4">
+        <div className="flex items-center justify-between border-b border-[#E6E1D6] dark:border-[#2B2A26] pb-4">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+            <div className="p-2 rounded-xl bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C] border border-[#F4D3C7] dark:border-[#3E2822]">
               <Upload className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Upload Book</h2>
-              <p className="text-xs text-gray-500">EPUB or PDF format (up to 50 MB)</p>
+              <h2 className="font-serif text-lg font-bold text-[#23211E] dark:text-[#EDE9E1]">Tải sách lên</h2>
+              <p className="text-xs text-[#706B63] dark:text-[#999388]">Định dạng EPUB hoặc PDF (tối đa 50 MB)</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+            className="p-1 rounded-lg text-[#706B63] hover:text-[#23211E] dark:hover:text-[#EDE9E1] transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -194,8 +194,8 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
               file
-                ? 'border-blue-400 bg-blue-50/30 dark:border-blue-700 dark:bg-blue-950/20'
-                : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-600'
+                ? 'border-[#C25E38] bg-[#FDF0EC]/40 dark:border-[#D97750] dark:bg-[#281C18]/30'
+                : 'border-[#E6E1D6] dark:border-[#2B2A26] hover:border-[#C25E38] dark:hover:border-[#D97750]'
             }`}
           >
             <input
@@ -212,7 +212,7 @@ export function BookUploadModal({ isOpen, onClose, tenantId }: BookUploadModalPr
 
             {file ? (
               <div className="flex items-center justify-center gap-3">
-                <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                <FileText className="w-8 h-8 text-[#C25E38] dark:text-[#D97750]" />
                 <div className="text-left">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-xs">
                     {file.name}

@@ -9,7 +9,7 @@ import { getUserFamily } from '@/modules/family/service';
 import { getTenantRooms } from '@/modules/room/service';
 import { BookCatalog, ContinueReadingSection, UserProfileHeader } from '@/modules/library/components';
 import { AppNavbar } from '@/components/layout';
-import { BookOpen, ArrowRight, HeartHandshake } from 'lucide-react';
+import { BookOpen, ArrowRight, HeartHandshake, CheckCircle2 } from 'lucide-react';
 
 export const metadata = {
   title: 'Thư viện - Family Reading Room',
@@ -49,7 +49,7 @@ export default async function DashboardPage() {
       initialMemberships={memberships}
       initialActiveTenantId={activeMembership?.tenant.id ?? null}
     >
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="min-h-screen bg-[#F7F4EE] dark:bg-[#161614] text-[#23211E] dark:text-[#EDE9E1]">
         {/* Unified Top Navigation Shell */}
         <AppNavbar
           activePath="/dashboard"
@@ -64,23 +64,23 @@ export default async function DashboardPage() {
         />
 
         {/* Dashboard Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8 sm:space-y-10">
-          {/* User Profile Header (Name edit, role badge, family link) */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-10">
+          {/* 1. Welcoming Editorial Greeting & Compact Profile Masthead */}
           <UserProfileHeader
             user={user}
             isSuperAdmin={isSuperAdmin}
             familyContext={familyContext}
           />
 
-          {/* Continue Reading Section (Personal Progress) */}
+          {/* 2. Reading Priority: In-Progress Hero Section */}
           {activeReadings.length > 0 && (
-            <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+            <div className="pt-2">
               <ContinueReadingSection items={activeReadings} />
             </div>
           )}
 
-          {/* Public Library Catalog (With search, filter, and progress) */}
-          <section className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+          {/* 3. Book Discovery Catalog */}
+          <section aria-labelledby="catalog-heading" className="pt-2">
             <BookCatalog
               books={books}
               isSuperAdmin={isSuperAdmin}
@@ -89,61 +89,68 @@ export default async function DashboardPage() {
             />
           </section>
 
-          {/* Bottom Highlights: Family Space Connection & Device Cache */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 4. Secondary Companion Highlights: Family Hub & Offline Storage */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#E6E1D6] dark:border-[#2B2A26]">
             {/* Family Space Quick Card */}
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="inline-flex p-2.5 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
-                  <HeartHandshake className="w-5 h-5" />
+            <div className="p-6 bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl border border-[#E6E1D6] dark:border-[#2B2A26] shadow-xs space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="inline-flex p-2.5 rounded-xl bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C] border border-[#F4D3C7] dark:border-[#3E2822]">
+                    <HeartHandshake className="w-5 h-5" />
+                  </div>
+                  {familyContext ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EFECE4] text-[#5B7065] dark:bg-[#252420] dark:text-[#8FA196] border border-[#E0DBD0] dark:border-[#2B2A26]">
+                      <span>{familyContext.members.length} Thành viên</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#EFECE4] text-[#706B63] dark:bg-[#252420] dark:text-[#999388]">
+                      Chưa kết nối
+                    </span>
+                  )}
                 </div>
-                {familyContext ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-                    <span>{familyContext.members.length} Thành viên</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    Chưa kết nối
-                  </span>
-                )}
-              </div>
 
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                  {familyContext ? familyContext.family.name : 'Không gian gia đình (Family Space)'}
-                </h2>
-                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {familyContext
-                    ? `Mã gia đình: ${familyContext.family.familyCode}. Chia sẻ tủ sách chung, thảo luận và mở phòng đọc đồng bộ.`
-                    : 'Gia nhập hoặc tự tạo không gian gia đình bằng mã định danh (Family ID) để cùng chia sẻ tủ sách và đọc chung.'}
-                </p>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-[#23211E] dark:text-[#EDE9E1]">
+                    {familyContext ? familyContext.family.name : 'Không gian gia đình'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] mt-1 leading-relaxed">
+                    {familyContext
+                      ? `Mã gia đình: ${familyContext.family.familyCode}. Chia sẻ tủ sách chung, thảo luận trích dẫn và mở phòng đọc đồng bộ từng trang.`
+                      : 'Gia nhập hoặc tự tạo không gian gia đình bằng mã định danh (Family ID) để cùng chia sẻ tủ sách và đọc chung.'}
+                  </p>
+                </div>
               </div>
 
               <div className="pt-2">
                 <Link
                   href="/family"
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-semibold text-xs border border-purple-200 dark:border-purple-800 transition"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#23211E] dark:text-[#EDE9E1] font-medium text-xs transition"
                 >
                   <span>{familyContext ? 'Mở tủ sách gia đình' : 'Tham gia hoặc Tạo gia đình'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <ArrowRight className="w-3.5 h-3.5 text-[#C25E38] dark:text-[#D97750]" />
                 </Link>
               </div>
             </div>
 
-            {/* Offline-first IndexedDB Cache */}
-            <div className="p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-3">
-              <div className="inline-flex p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                <BookOpen className="w-5 h-5" />
+            {/* Offline-first Reading Cache Companion */}
+            <div className="p-6 bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl border border-[#E6E1D6] dark:border-[#2B2A26] shadow-xs space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="inline-flex p-2.5 rounded-xl bg-[#EFECE4] text-[#5B7065] dark:bg-[#252420] dark:text-[#8FA196] border border-[#E0DBD0] dark:border-[#2B2A26]">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-[#23211E] dark:text-[#EDE9E1]">
+                    Bộ nhớ đệm đọc ngoại tuyến
+                  </h3>
+                  <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] mt-1 leading-relaxed">
+                    Sách sau khi mở sẽ được lưu trữ an toàn trong trình duyệt của bạn, cho phép tải trang tức thì và đọc mượt mà ngay cả khi không có mạng.
+                  </p>
+                </div>
               </div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-                Bộ nhớ đệm thiết bị (IndexedDB)
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                Sách sau khi mở sẽ được lưu trữ an toàn trong trình duyệt của bạn, cho phép tải trang tức thì và đọc mượt mà ngay cả khi mạng yếu.
-              </p>
               <div className="pt-2">
-                <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  Sẵn sàng hoạt động
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#EFECE4] text-[#5B7065] dark:bg-[#252420] dark:text-[#8FA196] border border-[#E0DBD0] dark:border-[#2B2A26]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Sẵn sàng ngoại tuyến</span>
                 </span>
               </div>
             </div>

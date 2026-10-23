@@ -50,18 +50,18 @@ export function BookCatalog({
   return (
     <div className="space-y-6">
       {/* Catalog Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-100 dark:border-gray-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#E6E1D6] dark:border-[#2B2A26]">
         <div>
           <div className="flex items-center gap-2.5">
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
-              Thư viện sách (Library Catalog)
+            <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#23211E] dark:text-[#EDE9E1] tracking-tight">
+              Thư viện sách
             </h2>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-              {books.length} {books.length === 1 ? 'Cuốn' : 'Cuốn'}
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EFECE4] text-[#5B7065] dark:bg-[#252420] dark:text-[#8FA196] border border-[#E0DBD0] dark:border-[#2B2A26]">
+              {books.length} {books.length === 1 ? 'cuốn' : 'cuốn'}
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Kho sách EPUB & PDF mở rộng cho mọi độc giả đọc độc lập với bộ nhớ đệm thiết bị và tiến độ cá nhân.
+          <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] mt-1">
+            Kho sách điện tử mở rộng cho mọi độc giả đọc độc lập với bộ nhớ đệm thiết bị và tiến độ cá nhân.
           </p>
         </div>
 
@@ -71,19 +71,19 @@ export function BookCatalog({
               size="md"
               variant="primary"
               onClick={() => setIsUploadOpen(true)}
-              className="gap-2 bg-blue-600 hover:bg-blue-500 text-white"
+              className="gap-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
             >
               <Plus className="w-4 h-4" />
-              <span>Tải sách lên (Upload)</span>
+              <span>Tải sách lên</span>
             </Button>
           ) : (
             <Button
               size="md"
               variant="outline"
               onClick={() => setIsRequestOpen(true)}
-              className="gap-2 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+              className="gap-2 border-[#E6E1D6] dark:border-[#2B2A26] text-[#C25E38] dark:text-[#D97750] hover:bg-[#FDF0EC] dark:hover:bg-[#281C18]"
             >
-              <BookPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <BookPlus className="w-4 h-4" />
               <span>Yêu cầu thêm sách</span>
             </Button>
           )}
@@ -93,15 +93,15 @@ export function BookCatalog({
       {/* Catalog Content */}
       {books.length === 0 ? (
         /* Empty State: No Books in Library */
-        <div className="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-gray-900 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 space-y-4">
-          <div className="p-4 rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+        <div className="flex flex-col items-center justify-center p-12 text-center bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl border border-dashed border-[#E6E1D6] dark:border-[#2B2A26] space-y-4">
+          <div className="p-4 rounded-2xl bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C]">
             <BookOpen className="w-10 h-10" />
           </div>
           <div className="space-y-1 max-w-sm">
-            <h3 className="font-bold text-gray-900 dark:text-white text-lg">
+            <h3 className="font-serif font-bold text-[#23211E] dark:text-[#EDE9E1] text-lg">
               Chưa có sách nào trong thư viện
             </h3>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388]">
               {canUpload
                 ? 'Tải lên cuốn sách EPUB hoặc PDF đầu tiên để bắt đầu trải nghiệm đọc.'
                 : 'Thư viện hiện đang trống. Hãy gửi yêu cầu thêm sách để Super Admin cập nhật!'}
@@ -112,7 +112,7 @@ export function BookCatalog({
               size="sm"
               variant="primary"
               onClick={() => setIsUploadOpen(true)}
-              className="gap-2 mt-2 bg-blue-600 hover:bg-blue-500 text-white"
+              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
             >
               <Sparkles className="w-4 h-4" />
               <span>Thêm cuốn sách đầu tiên</span>
@@ -122,7 +122,7 @@ export function BookCatalog({
               size="sm"
               variant="primary"
               onClick={() => setIsRequestOpen(true)}
-              className="gap-2 mt-2 bg-purple-600 hover:bg-purple-500 text-white"
+              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
             >
               <BookPlus className="w-4 h-4" />
               <span>Yêu cầu sách mới</span>
@@ -146,15 +146,15 @@ export function BookCatalog({
 
           {/* Filtered Grid or Empty Search State */}
           {filteredBooks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-3">
-              <div className="p-3.5 rounded-2xl bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-[#FFFFFF] dark:bg-[#20201C] rounded-2xl border border-[#E6E1D6] dark:border-[#2B2A26] space-y-3">
+              <div className="p-3.5 rounded-2xl bg-[#EFECE4] text-[#706B63] dark:bg-[#252420] dark:text-[#999388]">
                 <SearchX className="w-8 h-8" />
               </div>
               <div className="space-y-1 max-w-sm">
-                <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                <h3 className="font-serif font-bold text-[#23211E] dark:text-[#EDE9E1] text-base">
                   Không tìm thấy sách phù hợp
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-[#706B63] dark:text-[#999388]">
                   Không có cuốn sách nào khớp với từ khóa tìm kiếm hoặc định dạng đã chọn.
                 </p>
               </div>

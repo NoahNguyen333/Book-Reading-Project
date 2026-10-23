@@ -8,14 +8,14 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'primary', size = 'md', children, ...props }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+    const baseStyles = 'inline-flex items-center justify-center font-medium rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
     
     const variantStyles: Record<NonNullable<ButtonProps['variant']>, string> = {
-      primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-      secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700',
-      outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800',
-      ghost: 'text-gray-700 hover:bg-gray-100 focus:ring-gray-500 dark:text-gray-300 dark:hover:bg-gray-800',
-      danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+      primary: 'bg-[#C25E38] text-white hover:bg-[#AF512E] focus:ring-[#C25E38]/30 shadow-xs',
+      secondary: 'bg-[#EFECE4] text-[#23211E] hover:bg-[#E5E1D6] focus:ring-[#5B7065]/30 dark:bg-[#2A2925] dark:text-[#EDE9E1] dark:hover:bg-[#34332E]',
+      outline: 'border border-[#E6E1D6] text-[#23211E] hover:bg-[#F2EFE9] focus:ring-[#C25E38]/20 dark:border-[#2E2D28] dark:text-[#EDE9E1] dark:hover:bg-[#252420]',
+      ghost: 'text-[#706B63] hover:text-[#23211E] hover:bg-[#EFECE4] dark:text-[#999388] dark:hover:text-[#EDE9E1] dark:hover:bg-[#252420]',
+      danger: 'bg-red-700 text-white hover:bg-red-800 focus:ring-red-500',
     };
 
     const sizeStyles: Record<NonNullable<ButtonProps['size']>, string> = {
