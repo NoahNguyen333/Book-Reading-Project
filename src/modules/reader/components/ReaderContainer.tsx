@@ -5,6 +5,7 @@ import { useBookLoader } from '../hooks/useBookLoader';
 import { EpubReader } from './EpubReader';
 import { PdfReader } from './PdfReader';
 import { Bookmark } from '../types';
+import { Annotation } from '../annotations/types';
 import { Loader2, AlertCircle, HardDrive, CloudDownload } from 'lucide-react';
 import { Button } from '@/components/ui';
 
@@ -13,7 +14,9 @@ interface ReaderContainerProps {
   tenantId: string;
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
+  initialAnnotations?: Annotation[];
   bookTitle?: string;
+  currentUserId?: string;
   format?: string;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
@@ -25,7 +28,9 @@ export function ReaderContainer({
   tenantId,
   initialCfi,
   initialBookmarks = [],
+  initialAnnotations = [],
   bookTitle,
+  currentUserId,
   format = 'epub',
   externalLocation,
   onLocationChange,
@@ -109,6 +114,9 @@ export function ReaderContainer({
         tenantId={tenantId}
         initialCfi={initialCfi}
         initialBookmarks={initialBookmarks}
+        initialAnnotations={initialAnnotations}
+        bookTitle={bookTitle}
+        currentUserId={currentUserId}
         externalLocation={externalLocation}
         onLocationChange={onLocationChange}
         disableProgressSave={disableProgressSave}
@@ -123,6 +131,9 @@ export function ReaderContainer({
       tenantId={tenantId}
       initialCfi={initialCfi}
       initialBookmarks={initialBookmarks}
+      initialAnnotations={initialAnnotations}
+      bookTitle={bookTitle}
+      currentUserId={currentUserId}
       externalLocation={externalLocation}
       onLocationChange={onLocationChange}
       disableProgressSave={disableProgressSave}

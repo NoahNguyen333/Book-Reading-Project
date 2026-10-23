@@ -16,8 +16,19 @@ import {
   Moon,
   Coffee,
   Loader2,
+  Highlighter,
 } from 'lucide-react';
 import { Bookmark } from '../types';
+import {
+  Annotation,
+  HighlightColor,
+} from '../annotations/types';
+import {
+  createAnnotationAction,
+  deleteAnnotationAction,
+} from '../annotations/actions';
+import { HighlightContextMenu } from './HighlightContextMenu';
+import { AnnotationsSidebar } from './AnnotationsSidebar';
 import {
   ReaderTheme,
   THEME_CONFIGS,
@@ -33,6 +44,9 @@ interface PdfReaderProps {
   tenantId: string;
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
+  initialAnnotations?: Annotation[];
+  bookTitle?: string;
+  currentUserId?: string;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
   disableProgressSave?: boolean;
@@ -44,6 +58,9 @@ export function PdfReader({
   tenantId,
   initialCfi,
   initialBookmarks = [],
+  initialAnnotations = [],
+  bookTitle,
+  currentUserId,
   externalLocation,
   onLocationChange,
   disableProgressSave = false,
@@ -67,11 +84,23 @@ export function PdfReader({
   const [isDocumentLoading, setIsDocumentLoading] = useState<boolean>(true);
   const [isPageRendering, setIsPageRendering] = useState<boolean>(false);
 
-  // Bookmarks
+  // Bookmarks & Annotations
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
+  const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [isAnnotationsOpen, setIsAnnotationsOpen] = useState(false);
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+
+  // Selection & Text Layer
+  const [selectionState, setSelectionState] = useState<{
+    text: string;
+    location: string;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [textItems, setTextItems] = useState<
+    Array<{ str: string; left: number; top: number; width: number; height: number; fontSize: number }>
+  >([]);
 
   // Page direct input
   const [inputPage, setInputPage] = useState<string>(String(initialPage));
@@ -174,6 +203,30 @@ export function PdfReader({
           currentRenderTaskRef.current = renderTask;
 
           await renderTask.promise;
+
+          // Extract text content for selectable text overlay layer
+          try {
+            const textContent = await page.getTextContent();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const items = (textContent.items as any[])
+              .filter((it) => it.str && it.str.trim())
+              .map((it) => {
+                const tx = it.transform;
+                const x = tx[4] * scale;
+                const y = viewport.height - (tx[5] * scale);
+                return {
+                  str: String(it.str),
+                  left: x,
+                  top: Math.max(0, y - ((it.height || 12) * scale)),
+                  width: (it.width || 20) * scale,
+                  height: (it.height || 12) * scale,
+                  fontSize: Math.max(8, Math.abs(tx[0] || 12) * scale),
+                };
+              });
+            setTextItems(items);
+          } catch {
+            // Text layer extraction fallback
+          }
         }
       } catch (err: unknown) {
         // Ignore expected cancellation errors
@@ -298,6 +351,68 @@ export function PdfReader({
     }
   };
 
+  // Annotation Handlers
+  const handleMouseUp = () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (text && text.length > 0 && selection && selection.rangeCount > 0) {
+      try {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setSelectionState({
+          text,
+          location: formatPageCfi(currentPage),
+          position: { x: rect.left + rect.width / 2, y: rect.top },
+        });
+      } catch {
+        // Selection coordinate fallback
+      }
+    }
+  };
+
+  const handleSaveAnnotation = async (
+    color: HighlightColor,
+    note?: string,
+    isShared?: boolean
+  ) => {
+    if (!selectionState) return;
+
+    try {
+      const res = await createAnnotationAction({
+        tenantId,
+        bookId,
+        location: selectionState.location,
+        highlightedText: selectionState.text,
+        note,
+        color,
+        isShared,
+      });
+
+      if (res.data) {
+        setAnnotations((prev) => [res.data!, ...prev]);
+      }
+    } catch (err) {
+      console.warn('Failed to save highlight:', err);
+    }
+  };
+
+  const handleDeleteAnnotation = async (id: string) => {
+    try {
+      await deleteAnnotationAction(id, tenantId, bookId);
+      setAnnotations((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      console.warn('Failed to delete annotation:', err);
+    }
+  };
+
+  const handleJumpToAnnotation = (loc: string) => {
+    const targetPage = parsePageFromCfi(loc);
+    if (targetPage && targetPage >= 1 && targetPage <= totalPages) {
+      setCurrentPage(targetPage);
+    }
+    setIsAnnotationsOpen(false);
+  };
+
   // Theme Styling
   const themeStyles = THEME_CONFIGS[theme];
   const percentage = calculatePagePercentage(currentPage, totalPages);
@@ -324,6 +439,18 @@ export function PdfReader({
             title="Bookmarks"
           >
             <BookmarkIcon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setIsAnnotationsOpen(!isAnnotationsOpen)}
+            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition relative"
+            title="Highlights & Notes"
+          >
+            <Highlighter className="w-5 h-5" />
+            {annotations.length > 0 && (
+              <span className="absolute top-1 right-1 px-1 rounded-full text-[9px] font-bold bg-amber-500 text-white leading-tight">
+                {annotations.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -416,6 +543,7 @@ export function PdfReader({
       {/* Main Canvas Viewport */}
       <div
         ref={containerRef}
+        onMouseUp={handleMouseUp}
         className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4"
       >
         {isDocumentLoading ? (
@@ -435,6 +563,31 @@ export function PdfReader({
               style={{ filter: canvasFilter }}
               className="block rounded-sm transition duration-150"
             />
+            {/* Selectable Text Layer Overlay */}
+            <div
+              className="absolute inset-0 overflow-hidden pointer-events-auto select-text"
+              style={{
+                width: canvasRef.current?.style.width,
+                height: canvasRef.current?.style.height,
+              }}
+            >
+              {textItems.map((item, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    position: 'absolute',
+                    left: `${item.left}px`,
+                    top: `${item.top}px`,
+                    fontSize: `${item.fontSize}px`,
+                    lineHeight: `${item.height}px`,
+                    color: 'transparent',
+                    userSelect: 'text',
+                  }}
+                >
+                  {item.str}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -525,6 +678,25 @@ export function PdfReader({
           </div>
         </div>
       )}
+
+      {/* Slide-Over Drawer: Highlights & Notes */}
+      <AnnotationsSidebar
+        isOpen={isAnnotationsOpen}
+        onClose={() => setIsAnnotationsOpen(false)}
+        annotations={annotations}
+        onJumpToLocation={handleJumpToAnnotation}
+        onDeleteAnnotation={handleDeleteAnnotation}
+        bookTitle={bookTitle}
+        currentUserId={currentUserId}
+      />
+
+      {/* In-Reader Highlight Context Menu Popover */}
+      <HighlightContextMenu
+        position={selectionState?.position || null}
+        selectedText={selectionState?.text || ''}
+        onSave={handleSaveAnnotation}
+        onClose={() => setSelectionState(null)}
+      />
     </div>
   );
 }

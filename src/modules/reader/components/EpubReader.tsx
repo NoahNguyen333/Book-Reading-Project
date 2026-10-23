@@ -15,8 +15,20 @@ import {
   Moon,
   Coffee,
   Check,
+  Highlighter,
 } from 'lucide-react';
 import { Bookmark } from '../types';
+import {
+  Annotation,
+  HighlightColor,
+  HIGHLIGHT_COLOR_CONFIGS,
+} from '../annotations/types';
+import {
+  createAnnotationAction,
+  deleteAnnotationAction,
+} from '../annotations/actions';
+import { HighlightContextMenu } from './HighlightContextMenu';
+import { AnnotationsSidebar } from './AnnotationsSidebar';
 import {
   ReaderTheme,
   THEME_CONFIGS,
@@ -31,6 +43,9 @@ interface EpubReaderProps {
   tenantId: string;
   initialCfi?: string | null;
   initialBookmarks?: Bookmark[];
+  initialAnnotations?: Annotation[];
+  bookTitle?: string;
+  currentUserId?: string;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
   disableProgressSave?: boolean;
@@ -42,6 +57,9 @@ export function EpubReader({
   tenantId,
   initialCfi,
   initialBookmarks = [],
+  initialAnnotations = [],
+  bookTitle,
+  currentUserId,
   externalLocation,
   onLocationChange,
   disableProgressSave = false,
@@ -62,16 +80,29 @@ export function EpubReader({
   const [theme, setTheme] = useState<ReaderTheme>('light');
   const [toc, setToc] = useState<NavItem[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
+  const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
 
   // UI Panels
   const [isTocOpen, setIsTocOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [isAnnotationsOpen, setIsAnnotationsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
 
+  // In-Reader Text Selection State
+  const [selectionState, setSelectionState] = useState<{
+    text: string;
+    location: string;
+    position: { x: number; y: number };
+  } | null>(null);
+
   // Debounced progress save ref
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialAnnotationsRef = useRef(initialAnnotations);
+  useEffect(() => {
+    initialAnnotationsRef.current = initialAnnotations;
+  }, [initialAnnotations]);
 
   const syncProgressDebounced = useCallback(
     (cfi: string, pct: number) => {
@@ -153,6 +184,54 @@ export function EpubReader({
 
       if (!disableProgressSaveRef.current) {
         syncProgressDebounced(cfi, pct);
+      }
+    });
+
+    // Listen to text selection in EPUB rendition
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rendition.on('selected', (cfiRange: string, contents: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = (rendition as any).getRange(cfiRange)?.toString() || '';
+      if (text && text.trim().length > 0) {
+        let x = window.innerWidth / 2;
+        let y = 160;
+        try {
+          const selection = contents?.window?.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const iframe = viewerRef.current?.querySelector('iframe');
+            const iframeRect = iframe?.getBoundingClientRect() || viewerRef.current?.getBoundingClientRect();
+            if (iframeRect) {
+              x = iframeRect.left + rect.left + rect.width / 2;
+              y = iframeRect.top + rect.top;
+            }
+          }
+        } catch {
+          // Fallback to center coordinates
+        }
+
+        setSelectionState({
+          text: text.trim(),
+          location: cfiRange,
+          position: { x, y },
+        });
+      }
+    });
+
+    // Render initial highlight overlays
+    initialAnnotationsRef.current.forEach((ann) => {
+      try {
+        const cfg = HIGHLIGHT_COLOR_CONFIGS[ann.color];
+        rendition.annotations.highlight(
+          ann.location,
+          {},
+          () => {},
+          'hl-' + ann.id,
+          { fill: cfg.hex, 'fill-opacity': '0.35' }
+        );
+      } catch {
+        // Safe skip if location cannot be marked
       }
     });
 
@@ -249,6 +328,66 @@ export function EpubReader({
     }
   };
 
+  // Annotation Handlers
+  const handleSaveAnnotation = async (
+    color: HighlightColor,
+    note?: string,
+    isShared?: boolean
+  ) => {
+    if (!selectionState) return;
+
+    try {
+      const res = await createAnnotationAction({
+        tenantId,
+        bookId,
+        location: selectionState.location,
+        highlightedText: selectionState.text,
+        note,
+        color,
+        isShared,
+      });
+
+      if (res.data) {
+        setAnnotations((prev) => [res.data!, ...prev]);
+
+        // Draw highlight overlay on rendition
+        try {
+          const cfg = HIGHLIGHT_COLOR_CONFIGS[color];
+          renditionRef.current?.annotations.highlight(
+            selectionState.location,
+            {},
+            () => {},
+            'hl-' + res.data.id,
+            { fill: cfg.hex, 'fill-opacity': '0.35' }
+          );
+        } catch {
+          // Rendition highlight fallback
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to save highlight:', err);
+    }
+  };
+
+  const handleDeleteAnnotation = async (id: string) => {
+    try {
+      await deleteAnnotationAction(id, tenantId, bookId);
+      setAnnotations((prev) => prev.filter((a) => a.id !== id));
+      try {
+        renditionRef.current?.annotations.remove(id, 'highlight');
+      } catch {
+        // Annotation removal fallback
+      }
+    } catch (err) {
+      console.warn('Failed to delete annotation:', err);
+    }
+  };
+
+  const handleJumpToAnnotation = (loc: string) => {
+    jumpToCfi(loc);
+    setIsAnnotationsOpen(false);
+  };
+
   const themeStyles = THEME_CONFIGS[theme];
 
   return (
@@ -272,6 +411,18 @@ export function EpubReader({
             title="Bookmarks"
           >
             <BookmarkIcon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setIsAnnotationsOpen(!isAnnotationsOpen)}
+            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition relative"
+            title="Highlights & Notes"
+          >
+            <Highlighter className="w-5 h-5" />
+            {annotations.length > 0 && (
+              <span className="absolute top-1 right-1 px-1 rounded-full text-[9px] font-bold bg-amber-500 text-white leading-tight">
+                {annotations.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -522,6 +673,25 @@ export function EpubReader({
           </div>
         </div>
       )}
+
+      {/* Slide-Over Drawer: Highlights & Notes */}
+      <AnnotationsSidebar
+        isOpen={isAnnotationsOpen}
+        onClose={() => setIsAnnotationsOpen(false)}
+        annotations={annotations}
+        onJumpToLocation={handleJumpToAnnotation}
+        onDeleteAnnotation={handleDeleteAnnotation}
+        bookTitle={bookTitle}
+        currentUserId={currentUserId}
+      />
+
+      {/* In-Reader Highlight Context Menu Popover */}
+      <HighlightContextMenu
+        position={selectionState?.position || null}
+        selectedText={selectionState?.text || ''}
+        onSave={handleSaveAnnotation}
+        onClose={() => setSelectionState(null)}
+      />
     </div>
   );
 }

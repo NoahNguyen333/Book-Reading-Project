@@ -33,6 +33,29 @@ declare module 'epubjs' {
     select: (name: string) => void;
   }
 
+  export interface RenditionAnnotations {
+    highlight: (
+      cfiRange: string,
+      data?: Record<string, any>,
+      cb?: (e: any) => void,
+      className?: string,
+      styles?: Record<string, any>
+    ) => void;
+    underline: (
+      cfiRange: string,
+      data?: Record<string, any>,
+      cb?: (e: any) => void,
+      className?: string,
+      styles?: Record<string, any>
+    ) => void;
+    mark: (
+      cfiRange: string,
+      data?: Record<string, any>,
+      cb?: (e: any) => void
+    ) => void;
+    remove: (cfiRange: string, type?: string) => void;
+  }
+
   export interface Rendition {
     display: (target?: string) => Promise<void>;
     prev: () => Promise<void>;
@@ -42,6 +65,7 @@ declare module 'epubjs' {
     off: (event: string, callback: (...args: any[]) => void) => void;
     themes: RenditionThemes;
     currentLocation: () => Location;
+    annotations: RenditionAnnotations;
   }
 
   export interface Locations {

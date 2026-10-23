@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
 import { getBookDetails, getUserReadingProgress, getBookmarks } from '@/modules/reader/service';
+import { getBookAnnotations } from '@/modules/reader/annotations/service';
 import { ReaderContainer } from '@/modules/reader/components';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 
@@ -11,18 +12,24 @@ interface ReaderPageProps {
   params: Promise<{
     bookId: string;
   }>;
+  searchParams?: Promise<{
+    loc?: string;
+  }>;
 }
 
 export async function generateMetadata({ params }: ReaderPageProps) {
   const { bookId } = await params;
   return {
     title: `Reading Book - Family Reading Room`,
-    description: `EPUB Reader session for ${bookId}`,
+    description: `Reader session for ${bookId}`,
   };
 }
 
-export default async function ReaderPage({ params }: ReaderPageProps) {
+export default async function ReaderPage({ params, searchParams }: ReaderPageProps) {
   const { bookId } = await params;
+  const search = searchParams ? await searchParams : undefined;
+  const targetLocation = search?.loc || null;
+
   const user = await getCurrentUser();
 
   if (!user) {
@@ -41,16 +48,19 @@ export default async function ReaderPage({ params }: ReaderPageProps) {
 
   const tenantId = activeMembership.tenant.id;
 
-  // Hydrate book metadata, reading progress, and bookmarks
-  const [book, progress, bookmarks] = await Promise.all([
+  // Hydrate book metadata, reading progress, bookmarks, and annotations in parallel
+  const [book, progress, bookmarks, annotations] = await Promise.all([
     getBookDetails(bookId, tenantId),
     getUserReadingProgress(bookId, user.id),
     getBookmarks(bookId, user.id),
+    getBookAnnotations(bookId, tenantId, user.id),
   ]);
 
   if (!book) {
     notFound();
   }
+
+  const startingLocation = targetLocation || progress?.cfi || null;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-900 text-white select-none">
@@ -83,14 +93,16 @@ export default async function ReaderPage({ params }: ReaderPageProps) {
         </div>
       </header>
 
-      {/* Main EPUB Reader Canvas */}
+      {/* Main Reader Canvas */}
       <main className="flex-1 relative w-full h-[calc(100vh-3rem)] overflow-hidden">
         <ReaderContainer
           bookId={bookId}
           tenantId={tenantId}
-          initialCfi={progress?.cfi ?? null}
+          initialCfi={startingLocation}
           initialBookmarks={bookmarks}
+          initialAnnotations={annotations}
           bookTitle={book.title}
+          currentUserId={user.id}
           format={book.format}
         />
       </main>

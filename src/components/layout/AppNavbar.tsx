@@ -9,6 +9,7 @@ import {
   LogOut,
   Shield,
   LayoutDashboard,
+  BookMarked,
 } from 'lucide-react';
 import { signOut } from '@/modules/auth';
 import { Button } from '@/components/ui';
@@ -92,6 +93,18 @@ export function AppNavbar({
                 {liveRoomsCount}
               </span>
             )}
+          </Link>
+
+          <Link
+            href="/notebook"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition ${
+              activePath === '/notebook'
+                ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+            }`}
+          >
+            <BookMarked className="w-4 h-4 text-amber-500" />
+            <span>Notebook</span>
           </Link>
         </nav>
 

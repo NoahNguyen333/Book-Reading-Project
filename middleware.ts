@@ -8,7 +8,8 @@ export async function middleware(request: NextRequest) {
   const isProtectedRoute =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/reader') ||
-    pathname.startsWith('/room');
+    pathname.startsWith('/room') ||
+    pathname.startsWith('/notebook');
   const isAuthRoute = pathname === '/login' || pathname === '/register';
 
   if (isProtectedRoute && !user) {
