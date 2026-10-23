@@ -1,8 +1,6 @@
 'use server';
 
 import { getCurrentUser } from '@/modules/auth';
-import { getUserTenants, findTenantRole } from '@/modules/tenant';
-import { canReadBooks } from '@/modules/entitlements';
 import { getBookDetails, upsertReadingProgress, createBookmark, removeBookmark } from './service';
 import { createAdminClient } from '@/lib/supabase/server';
 import { Bookmark } from './types';
@@ -14,23 +12,18 @@ export interface ReaderActionResult<T = unknown> {
 }
 
 /**
- * Validates tenant membership and generates a short-lived (60-second)
- * signed download URL to stream the private EPUB binary.
+ * Validates authentication and generates a short-lived (60-second)
+ * signed download URL to stream the EPUB or PDF binary.
+ * Supports cross-tenant reading of public catalog books.
  */
 export async function getAuthorizedBookDownloadUrl(
   bookId: string,
-  tenantId: string
+  tenantId?: string
 ): Promise<ReaderActionResult<{ signedUrl: string }>> {
   try {
     const user = await getCurrentUser();
     if (!user) {
       return { error: 'Authentication required to access book.' };
-    }
-
-    const memberships = await getUserTenants(user.id);
-    const role = findTenantRole(memberships, tenantId);
-    if (!canReadBooks(role)) {
-      return { error: 'Access denied: You do not have permission to read books in this space.' };
     }
 
     const book = await getBookDetails(bookId, tenantId);

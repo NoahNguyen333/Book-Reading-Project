@@ -1,53 +1,57 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { Play, BookOpen, Clock, Bookmark } from 'lucide-react';
+import { Play, BookOpen, Clock, Bookmark, Loader2 } from 'lucide-react';
 import { ActiveReadingItem } from '../types';
+import { useLocale, TranslationKey } from '@/lib/locale';
 
 interface ContinueReadingSectionProps {
   items: ActiveReadingItem[];
 }
 
-function formatRelativeTime(dateString: string): string {
+function formatRelativeTime(dateString: string, t: TranslationKey): string {
   try {
     const then = new Date(dateString).getTime();
     const now = Date.now();
     const diffSec = Math.floor((now - then) / 1000);
 
-    if (diffSec < 60) return 'Vừa xong';
+    if (diffSec < 60) return t.common.justNow;
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin} phút trước`;
+    if (diffMin < 60) return `${diffMin} ${t.common.minutesAgo}`;
     const diffHours = Math.floor(diffMin / 60);
-    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffHours < 24) return `${diffHours} ${t.common.hoursAgo}`;
     const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Hôm qua';
-    if (diffDays < 7) return `${diffDays} ngày trước`;
+    if (diffDays === 1) return t.common.yesterday;
+    if (diffDays < 7) return `${diffDays} ${t.common.daysAgo}`;
     return new Date(dateString).toLocaleDateString('vi-VN', {
       month: 'short',
       day: 'numeric',
     });
   } catch {
-    return 'Gần đây';
+    return t.common.recently;
   }
 }
 
-function formatLocationLabel(cfi?: string): string | null {
+function formatLocationLabel(cfi: string | undefined, t: TranslationKey): string | null {
   if (!cfi) return null;
   if (cfi.toLowerCase().startsWith('page:')) {
     const pageNum = cfi.split(':')[1];
-    return `Trang ${pageNum}`;
+    return `${t.common.page} ${pageNum}`;
   }
   return null;
 }
 
 export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
+  const { t } = useLocale();
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+
   if (!items || items.length === 0) return null;
 
   const [leadItem, ...remainingItems] = items;
   const leadPct = Math.round(leadItem.percentage);
-  const leadLoc = formatLocationLabel(leadItem.cfi);
-  const leadTime = formatRelativeTime(leadItem.updatedAt);
+  const leadLoc = formatLocationLabel(leadItem.cfi, t);
+  const leadTime = formatRelativeTime(leadItem.updatedAt, t);
 
   return (
     <section aria-labelledby="continue-reading-heading" className="space-y-4">
@@ -60,20 +64,20 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
           <div>
             <div className="flex items-center gap-2">
               <h2 id="continue-reading-heading" className="font-serif text-xl sm:text-2xl font-bold text-[#23211E] dark:text-[#EDE9E1] tracking-tight">
-                Tiếp tục đọc
+                {t.continueReading.title}
               </h2>
               <span className="text-xs text-[#706B63] dark:text-[#999388] font-normal hidden sm:inline">
-                Continue Reading
+                {t.continueReading.subtitle}
               </span>
             </div>
             <p className="text-xs text-[#706B63] dark:text-[#999388]">
-              Mở lại đúng trang sách bạn đang đọc dở dang.
+              {t.continueReading.description}
             </p>
           </div>
         </div>
 
         <span className="text-xs font-medium text-[#706B63] dark:text-[#999388] bg-[#EFECE4] dark:bg-[#20201C] px-2.5 py-1 rounded-full border border-[#E0DBD0] dark:border-[#2B2A26]">
-          {items.length} {items.length === 1 ? 'cuốn đang đọc' : 'cuốn đang đọc'}
+          {items.length} {t.continueReading.inProgressCount}
         </span>
       </div>
 
@@ -115,13 +119,13 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
             <div className="flex-1 space-y-2.5 min-w-0">
               <div>
                 <span className="text-[11px] uppercase tracking-wider font-semibold text-[#C25E38] dark:text-[#D97750]">
-                  Đang đọc gần nhất
+                  {t.continueReading.mostRecent}
                 </span>
                 <h3 className="font-serif text-lg sm:text-xl font-bold text-[#23211E] dark:text-[#EDE9E1] line-clamp-2 leading-snug">
                   {leadItem.book.title}
                 </h3>
                 <p className="text-xs text-[#706B63] dark:text-[#999388] line-clamp-1 italic mt-0.5">
-                  {leadItem.book.author ? leadItem.book.author : 'Tác giả chưa cập nhật'}
+                  {leadItem.book.author ? leadItem.book.author : t.continueReading.unknownAuthor}
                 </p>
               </div>
 
@@ -144,7 +148,7 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
               {/* Progress Bar */}
               <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#706B63] dark:text-[#999388]">Tiến độ đọc</span>
+                  <span className="text-[#706B63] dark:text-[#999388]">{t.continueReading.progress}</span>
                   <span className="font-serif font-bold text-[#C25E38] dark:text-[#D97750]">
                     {leadPct}%
                   </span>
@@ -159,14 +163,24 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
             </div>
           </div>
 
-          {/* Primary Action Button */}
+          {/* Primary Action Button with Instant Feedback */}
           <div className="pt-2 border-t border-[#E6E1D6] dark:border-[#2B2A26]">
             <Link
               href={`/reader/${leadItem.book.id}`}
-              className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#C25E38] hover:bg-[#AF512E] text-white font-medium text-sm shadow-xs transition"
+              onClick={() => setNavigatingId(leadItem.book.id)}
+              className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#C25E38] hover:bg-[#AF512E] text-white font-medium text-sm shadow-xs transition cursor-pointer"
             >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Đọc tiếp cuốn này</span>
+              {navigatingId === leadItem.book.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{t.continueReading.openingButton}</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>{t.continueReading.continueLead}</span>
+                </>
+              )}
             </Link>
           </div>
         </div>
@@ -175,14 +189,14 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
         {remainingItems.length > 0 && (
           <div className="lg:col-span-5 xl:col-span-4 flex flex-col justify-between space-y-3">
             <span className="text-xs font-semibold text-[#706B63] dark:text-[#999388]">
-              Các cuốn khác đang đọc ({remainingItems.length})
+              {t.continueReading.otherBooks} ({remainingItems.length})
             </span>
 
             <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[290px] pr-1">
               {remainingItems.map(({ book, percentage, cfi, updatedAt }) => {
                 const pct = Math.round(percentage);
-                const loc = formatLocationLabel(cfi);
-                const time = formatRelativeTime(updatedAt);
+                const loc = formatLocationLabel(cfi, t);
+                const time = formatRelativeTime(updatedAt, t);
 
                 return (
                   <div
@@ -224,10 +238,18 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
 
                     <Link
                       href={`/reader/${book.id}`}
-                      className="px-3 py-1.5 rounded-lg bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#23211E] dark:text-[#EDE9E1] text-xs font-semibold shrink-0 transition"
-                      title={`Đọc tiếp ${book.title}`}
+                      onClick={() => setNavigatingId(book.id)}
+                      className="px-3 py-1.5 rounded-lg bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#23211E] dark:text-[#EDE9E1] text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer"
+                      title={`${t.continueReading.continueButton} ${book.title}`}
                     >
-                      Tiếp tục
+                      {navigatingId === book.id ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>{t.continueReading.openingButton}</span>
+                        </>
+                      ) : (
+                        <span>{t.continueReading.continueButton}</span>
+                      )}
                     </Link>
                   </div>
                 );

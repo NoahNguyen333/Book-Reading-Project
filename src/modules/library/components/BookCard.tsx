@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useTransition } from 'react';
+import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Book } from '../types';
 import { BookOpen, Trash2, Loader2, ArrowRight, Play } from 'lucide-react';
 import { deleteBookAction } from '../actions';
+import { useLocale } from '@/lib/locale';
 
 interface BookCardProps {
   book: Book;
@@ -14,10 +15,13 @@ interface BookCardProps {
 }
 
 export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
+  const { t } = useLocale();
   const [isDeleting, startDeleteTransition] = useTransition();
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const handleDelete = () => {
-    if (confirm(`Bạn có chắc chắn muốn xóa cuốn sách "${book.title}" khỏi thư viện không?`)) {
+    const confirmMsg = t.bookCard.deleteConfirm.replace('{title}', book.title);
+    if (confirm(confirmMsg)) {
       startDeleteTransition(async () => {
         await deleteBookAction(tenantId, book.id);
       });
@@ -82,7 +86,7 @@ export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
           <button
             onClick={handleDelete}
             disabled={isDeleting}
-            title="Xóa sách khỏi thư viện"
+            title={t.bookCard.deleteTitle}
             className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-black/60 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition disabled:opacity-50 z-20 cursor-pointer"
           >
             {isDeleting ? (
@@ -101,7 +105,7 @@ export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
             {book.title}
           </h3>
           <p className="text-xs text-[#706B63] dark:text-[#999388] line-clamp-1 italic">
-            {book.author ? book.author : 'Chưa rõ tác giả'}
+            {book.author ? book.author : t.bookCard.unknownAuthor}
           </p>
         </div>
 
@@ -109,7 +113,7 @@ export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
         {typeof progress === 'number' && progress > 0 && (
           <div className="space-y-1 pt-0.5">
             <div className="flex items-center justify-between text-[11px] text-[#706B63] dark:text-[#999388]">
-              <span>Tiến độ</span>
+              <span>{t.bookCard.progress}</span>
               <span className="font-serif font-bold text-[#C25E38] dark:text-[#D97750]">
                 {Math.round(progress)}%
               </span>
@@ -123,23 +127,43 @@ export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
           </div>
         )}
 
-        {/* Read / Resume Button */}
+        {/* Read / Resume Button with Instant Visual Feedback */}
         <div className="pt-1">
           {typeof progress === 'number' && progress > 0 ? (
             <Link
               href={`/reader/${book.id}`}
-              className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl text-xs font-semibold bg-[#C25E38] hover:bg-[#AF512E] text-white shadow-xs transition"
+              onClick={() => setIsNavigating(true)}
+              className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl text-xs font-semibold bg-[#C25E38] hover:bg-[#AF512E] text-white shadow-xs transition cursor-pointer"
             >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Đọc tiếp</span>
+              {isNavigating ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{t.bookCard.openingBook}</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>{t.bookCard.continueBook}</span>
+                </>
+              )}
             </Link>
           ) : (
             <Link
               href={`/reader/${book.id}`}
-              className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl text-xs font-semibold bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#23211E] dark:text-[#EDE9E1] transition"
+              onClick={() => setIsNavigating(true)}
+              className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl text-xs font-semibold bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#23211E] dark:text-[#EDE9E1] transition cursor-pointer"
             >
-              <span>Mở sách</span>
-              <ArrowRight className="w-3 h-3" />
+              {isNavigating ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{t.bookCard.openingBook}</span>
+                </>
+              ) : (
+                <>
+                  <span>{t.bookCard.readBook}</span>
+                  <ArrowRight className="w-3 h-3" />
+                </>
+              )}
             </Link>
           )}
         </div>

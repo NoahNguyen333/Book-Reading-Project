@@ -17,6 +17,7 @@ import {
 import { updateUserProfileNameAction } from '@/modules/auth';
 import { UserFamilyContext } from '@/modules/family/types';
 import { formatFamilyRoleDisplay } from '@/modules/family/utils';
+import { useLocale } from '@/lib/locale';
 
 export interface UserProfileHeaderProps {
   user: {
@@ -33,16 +34,17 @@ export function UserProfileHeader({
   isSuperAdmin,
   familyContext,
 }: UserProfileHeaderProps) {
+  const { t } = useLocale();
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user.fullName || '');
-  const [currentName, setCurrentName] = useState(user.fullName || user.email?.split('@')[0] || 'Reader');
+  const [currentName, setCurrentName] = useState(user.fullName || user.email?.split('@')[0] || t.nav.reader);
   const [isSaving, setIsSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
   const handleSaveName = async () => {
     const trimmed = nameInput.trim();
     if (!trimmed) {
-      setNameError('Tên không được để trống.');
+      setNameError(t.profile.nameEmptyError);
       return;
     }
 
@@ -77,7 +79,7 @@ export function UserProfileHeader({
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="font-serif text-2xl sm:text-3xl font-bold text-[#23211E] dark:text-[#EDE9E1] tracking-tight">
-              Chào mừng trở lại,
+              {t.profile.greeting}
             </h1>
 
             {isEditingName ? (
@@ -99,7 +101,7 @@ export function UserProfileHeader({
                   onClick={handleSaveName}
                   disabled={isSaving}
                   className="p-1.5 rounded-lg bg-[#C25E38] hover:bg-[#AF512E] text-white transition disabled:opacity-50"
-                  title="Lưu tên"
+                  title={t.profile.saveName}
                 >
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 </button>
@@ -108,7 +110,7 @@ export function UserProfileHeader({
                   onClick={handleCancelEdit}
                   disabled={isSaving}
                   className="p-1.5 rounded-lg bg-[#EFECE4] hover:bg-[#E5E1D6] dark:bg-[#2A2925] dark:hover:bg-[#34332E] text-[#706B63] dark:text-[#EDE9E1] transition"
-                  title="Hủy"
+                  title={t.common.cancel}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -125,7 +127,7 @@ export function UserProfileHeader({
                     setIsEditingName(true);
                   }}
                   className="p-1 text-[#706B63] hover:text-[#C25E38] dark:hover:text-[#D97750] rounded-lg hover:bg-[#F7F4EE] dark:hover:bg-[#252420] transition"
-                  title="Đổi tên hiển thị"
+                  title={t.profile.editName}
                 >
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
@@ -138,14 +140,14 @@ export function UserProfileHeader({
           )}
 
           <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] max-w-2xl leading-relaxed">
-            Góc đọc sách cá nhân của bạn. Tiếp tục các trang sách dang dở hoặc kết nối không gian đọc cùng gia đình.
+            {t.profile.description}
           </p>
         </div>
 
         {/* Discreet Session Status */}
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFECE4] dark:bg-[#252420] text-[#5B7065] dark:text-[#8FA196] text-xs font-medium border border-[#E0DBD0] dark:border-[#2E2D28] self-start sm:self-auto shrink-0">
           <CheckCircle2 className="w-3.5 h-3.5 text-[#5B7065] dark:text-[#8FA196]" />
-          <span>Phiên đọc sẵn sàng</span>
+          <span>{t.profile.readyStatus}</span>
         </div>
       </div>
 
@@ -169,7 +171,7 @@ export function UserProfileHeader({
                 : 'bg-[#EFECE4] text-[#555047] border border-[#E0DBD0] dark:bg-[#282723] dark:text-[#C4BEB3] dark:border-[#34322C]'
             }`}
           >
-            {isSuperAdmin ? 'Platform Super Admin' : 'Độc giả'}
+            {isSuperAdmin ? t.profile.roleSuperAdmin : t.profile.roleReader}
           </span>
         </div>
 
@@ -198,7 +200,7 @@ export function UserProfileHeader({
               className="inline-flex items-center gap-1 text-[#C25E38] dark:text-[#D97750] hover:underline font-medium"
             >
               <Users className="w-3 h-3" />
-              <span>Chưa tham gia gia đình (Kết nối ngay)</span>
+              <span>{t.profile.notInFamily}</span>
               <ArrowRight className="w-3 h-3" />
             </Link>
           )}

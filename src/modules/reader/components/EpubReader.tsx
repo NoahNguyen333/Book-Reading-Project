@@ -175,6 +175,68 @@ export function EpubReader({
     rendition.themes.select('light');
     rendition.themes.fontSize(`${DEFAULT_FONT_SIZE}px`);
 
+    // Register passive touch and gesture listeners inside iframe to avoid scroll-blocking jank
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (rendition as any).hooks?.content?.register?.((contents: any) => {
+      const doc = contents?.document;
+      if (!doc) return;
+
+      let iframeTouchStart: { x: number; y: number; time: number } | null = null;
+
+      doc.addEventListener(
+        'touchstart',
+        (e: TouchEvent) => {
+          if (e.touches.length === 1) {
+            iframeTouchStart = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+              time: Date.now(),
+            };
+          }
+        },
+        { passive: true }
+      );
+
+      doc.addEventListener(
+        'touchend',
+        (e: TouchEvent) => {
+          if (!iframeTouchStart) return;
+          const touch = e.changedTouches[0];
+          const deltaX = touch.clientX - iframeTouchStart.x;
+          const deltaY = touch.clientY - iframeTouchStart.y;
+          const elapsed = Date.now() - iframeTouchStart.time;
+          iframeTouchStart = null;
+
+          const selection = doc.getSelection();
+          if (selection && selection.toString().trim().length > 0) return;
+
+          // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
+          if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
+            if (deltaX < 0) {
+              rendition.next();
+            } else {
+              rendition.prev();
+            }
+            return;
+          }
+
+          // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
+          if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
+            const width = doc.documentElement?.clientWidth || window.innerWidth;
+            const relativeX = touch.clientX / width;
+            if (relativeX < 0.2) {
+              rendition.prev();
+            } else if (relativeX > 0.8) {
+              rendition.next();
+            } else {
+              setIsToolbarVisible((v) => !v);
+            }
+          }
+        },
+        { passive: true }
+      );
+    });
+
     // Display initial position
     rendition.display(initialCfi || undefined);
 

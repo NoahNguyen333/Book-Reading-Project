@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Lora, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+import { LocaleProvider } from '@/lib/locale';
 
 const lora = Lora({
   subsets: ['latin', 'vietnamese'],
@@ -29,7 +30,9 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${lora.variable} ${plusJakarta.variable}`}>
       <body className="antialiased min-h-screen font-sans selection:bg-[#F3E2B4] selection:text-[#23211E]">
-        {children}
+        <LocaleProvider>
+          {children}
+        </LocaleProvider>
       </body>
     </html>
   );

@@ -64,34 +64,47 @@ function mapDbComment(
 }
 
 /**
- * Retrieves annotations for a specific book inside a tenant.
+ * Retrieves annotations for a specific book.
  * Includes user's private annotations plus any annotations shared by space members.
+ * Supports cross-tenant reading by querying annotations by bookId and user/shared permissions.
  */
 export async function getBookAnnotations(
   bookId: string,
-  tenantId: string,
-  currentUserId: string
+  tenantId?: string | null,
+  currentUserId?: string
 ): Promise<Annotation[]> {
+  const actualUserId = currentUserId || (tenantId ? tenantId : '');
   const supabase = await createClient();
 
   // Query annotations: user's own OR shared
-  const { data, error } = await supabase
+  let query = supabase
     .from('annotations')
     .select('*')
-    .eq('book_id', bookId)
-    .eq('tenant_id', tenantId)
-    .or(`user_id.eq.${currentUserId},is_shared.eq.true`)
-    .order('created_at', { ascending: true });
+    .eq('book_id', bookId);
+
+  if (tenantId && tenantId !== actualUserId) {
+    // If a specific tenant is specified, include it or allow cross-tenant personal notes
+    query = query.or(`tenant_id.eq.${tenantId},user_id.eq.${actualUserId}`);
+  }
+
+  if (actualUserId) {
+    query = query.or(`user_id.eq.${actualUserId},is_shared.eq.true`);
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: true });
 
   if (error || !data) {
     const admin = createAdminClient();
-    const { data: adminData } = await admin
+    let adminQuery = admin
       .from('annotations')
       .select('*')
-      .eq('book_id', bookId)
-      .eq('tenant_id', tenantId)
-      .or(`user_id.eq.${currentUserId},is_shared.eq.true`)
-      .order('created_at', { ascending: true });
+      .eq('book_id', bookId);
+
+    if (actualUserId) {
+      adminQuery = adminQuery.or(`user_id.eq.${actualUserId},is_shared.eq.true`);
+    }
+
+    const { data: adminData } = await adminQuery.order('created_at', { ascending: true });
 
     if (!adminData) return [];
     return adminData.map((r) => mapDbAnnotation(r));

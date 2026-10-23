@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, X, ArrowUpDown } from 'lucide-react';
 import { FormatFilter, SortOption, SORT_OPTIONS } from '../search';
+import { useLocale } from '@/lib/locale';
 
 interface LibraryToolbarProps {
   searchQuery: string;
@@ -27,6 +28,7 @@ export function LibraryToolbar({
   totalCount,
   onClearFilters,
 }: LibraryToolbarProps) {
+  const { t } = useLocale();
   const [localInput, setLocalInput] = useState(searchQuery);
 
   // Sync local input with external searchQuery
@@ -47,6 +49,23 @@ export function LibraryToolbar({
 
   const hasActiveFilters = Boolean(searchQuery.trim() || selectedFormat !== 'all');
 
+  const getSortLabel = (val: SortOption) => {
+    switch (val) {
+      case 'recent':
+        return t.toolbar.sortRecent;
+      case 'title-asc':
+        return t.toolbar.sortTitleAsc;
+      case 'title-desc':
+        return t.toolbar.sortTitleDesc;
+      case 'size-desc':
+        return t.toolbar.sortSizeDesc;
+      case 'size-asc':
+        return t.toolbar.sortSizeAsc;
+      default:
+        return val;
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3.5 pb-2">
       {/* Search Input & Format Tabs */}
@@ -56,7 +75,7 @@ export function LibraryToolbar({
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#706B63] dark:text-[#999388]" />
           <input
             type="text"
-            placeholder="Tìm theo tiêu đề, tác giả..."
+            placeholder={t.toolbar.searchPlaceholder}
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
             className="w-full pl-9 pr-9 py-2 text-xs sm:text-sm rounded-xl border border-[#E6E1D6] dark:border-[#2B2A26] bg-[#FFFFFF] dark:bg-[#20201C] text-[#23211E] dark:text-[#EDE9E1] placeholder:text-[#706B63]/60 focus:outline-none focus:ring-2 focus:ring-[#C25E38]/20 focus:border-[#C25E38] shadow-xs transition"
@@ -68,7 +87,7 @@ export function LibraryToolbar({
                 onSearchChange('');
               }}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#706B63] hover:text-[#23211E] dark:hover:text-[#EDE9E1] rounded-md transition"
-              title="Xóa tìm kiếm"
+              title={t.toolbar.clearSearch}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -83,13 +102,13 @@ export function LibraryToolbar({
               <button
                 key={fmt}
                 onClick={() => onFormatChange(fmt)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition cursor-pointer ${
                   isActive
                     ? 'bg-[#FFFFFF] dark:bg-[#1E1D1A] text-[#C25E38] dark:text-[#D97750] font-semibold shadow-xs'
                     : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1]'
                 }`}
               >
-                {fmt === 'all' ? 'Tất cả' : fmt.toUpperCase()}
+                {fmt === 'all' ? t.toolbar.allFormats : fmt.toUpperCase()}
               </button>
             );
           })}
@@ -101,17 +120,17 @@ export function LibraryToolbar({
         <div className="flex items-center gap-2 text-xs text-[#706B63] dark:text-[#999388]">
           <span className="font-medium">
             {hasActiveFilters
-              ? `${filteredCount} / ${totalCount} cuốn`
-              : `${totalCount} ${totalCount === 1 ? 'cuốn sách' : 'cuốn sách'}`}
+              ? `${filteredCount} / ${totalCount} ${t.toolbar.filteredCountSuffix}`
+              : `${totalCount} ${t.toolbar.booksCount}`}
           </span>
           {hasActiveFilters && (
             <>
               <span>•</span>
               <button
                 onClick={onClearFilters}
-                className="text-[#C25E38] dark:text-[#D97750] hover:underline font-semibold"
+                className="text-[#C25E38] dark:text-[#D97750] hover:underline font-semibold cursor-pointer"
               >
-                Đặt lại bộ lọc
+                {t.toolbar.resetFilters}
               </button>
             </>
           )}
@@ -128,7 +147,7 @@ export function LibraryToolbar({
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {getSortLabel(opt.value)}
               </option>
             ))}
           </select>

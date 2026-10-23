@@ -37,29 +37,31 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
     redirect(`/login?redirectTo=/reader/${bookId}`);
   }
 
+  // 1. Fetch book details strictly by bookId (supports cross-tenant reading)
+  const book = await getBookDetails(bookId);
+
+  if (!book) {
+    notFound();
+  }
+
+  // 2. Resolve user's space context (optional for solo reading)
   const cookieStore = await cookies();
   const activeTenantCookie = cookieStore.get(ACTIVE_TENANT_COOKIE)?.value || null;
 
   const memberships = await getUserTenants(user.id);
   const activeMembership = resolveActiveMembership(memberships, activeTenantCookie);
+  const tenantName = activeMembership?.tenant.name || 'Solo Reading';
 
-  if (!activeMembership) {
-    redirect('/dashboard');
-  }
+  const superAdminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  const isSuperAdmin = Boolean(user.email && superAdminEmail && user.email.trim().toLowerCase() === superAdminEmail);
+  const isAdmin = isSuperAdmin || (activeMembership ? canUploadBooks(activeMembership.role) : false);
 
-  const tenantId = activeMembership.tenant.id;
-
-  // Hydrate book metadata, reading progress, bookmarks, and annotations in parallel
-  const [book, progress, bookmarks, annotations] = await Promise.all([
-    getBookDetails(bookId, tenantId),
+  // 3. Hydrate reading progress, bookmarks, and annotations in parallel without cross-tenant block
+  const [progress, bookmarks, annotations] = await Promise.all([
     getUserReadingProgress(bookId, user.id),
     getBookmarks(bookId, user.id),
-    getBookAnnotations(bookId, tenantId, user.id),
+    getBookAnnotations(bookId, book.tenantId, user.id),
   ]);
-
-  if (!book) {
-    notFound();
-  }
 
   const startingLocation = targetLocation || progress?.cfi || null;
 
@@ -77,7 +79,7 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
           </Link>
           <div className="h-4 w-px bg-gray-800" />
           <div className="flex items-center gap-2 max-w-md truncate">
-            <BookOpen className="w-4 h-4 text-blue-400 shrink-0" />
+            <BookOpen className="w-4 h-4 text-[#C25E38] shrink-0" />
             <h1 className="text-xs sm:text-sm font-semibold truncate text-gray-200">
               {book.title}
             </h1>
@@ -90,7 +92,7 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
         </div>
 
         <div className="text-xs text-gray-400 font-medium">
-          {activeMembership.tenant.name}
+          {tenantName}
         </div>
       </header>
 
@@ -98,13 +100,13 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
       <main className="flex-1 relative w-full h-[calc(100vh-3rem)] overflow-hidden">
         <ReaderContainer
           bookId={bookId}
-          tenantId={tenantId}
+          tenantId={book.tenantId}
           initialCfi={startingLocation}
           initialBookmarks={bookmarks}
           initialAnnotations={annotations}
           bookTitle={book.title}
           currentUserId={user.id}
-          isAdmin={canUploadBooks(activeMembership.role)}
+          isAdmin={isAdmin}
           format={book.format}
         />
       </main>

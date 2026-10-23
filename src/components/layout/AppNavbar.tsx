@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { signOut } from '@/modules/auth';
 import { Button } from '@/components/ui';
+import { useLocale } from '@/lib/locale';
 
 export interface AppNavbarProps {
   activePath?: string;
@@ -38,15 +39,18 @@ export function AppNavbar({
   isSuperAdmin = false,
   liveRoomsCount = 0,
 }: AppNavbarProps) {
-  const displayName = userName || userEmail?.split('@')[0] || 'Reader';
+  const { locale, setLocale, t } = useLocale();
+  const displayName = userName || userEmail?.split('@')[0] || t.nav.reader;
 
   const roleDisplay = isSuperAdmin
-    ? 'Super Admin'
+    ? t.nav.superAdmin
     : familyRole
     ? `Family ${familyRole}`
     : role.toLowerCase() === 'admin'
-    ? 'Admin'
-    : 'Reader';
+    ? t.nav.admin
+    : t.nav.reader;
+
+  const spaceDisplay = familyName || (tenantName === 'Solo Library' ? t.nav.soloSpace : tenantName);
 
   return (
     <header className="border-b border-[#E6E1D6] dark:border-[#2B2A26] bg-[#F7F4EE]/90 dark:bg-[#161614]/90 backdrop-blur-md sticky top-0 z-30 transition">
@@ -65,12 +69,12 @@ export function AppNavbar({
             </span>
           </Link>
 
-          <div className="hidden md:block h-4 w-px bg-[#E6E1D6] dark:bg-[#2B2A26]" />
+          <div className="hidden md:block h-4 w-px bg-[#E6E1D6] dark:border-[#2B2A26]" />
 
           {/* Family Space Indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EFECE4] dark:bg-[#20201C] text-xs font-medium text-[#555047] dark:text-[#B5AFA4] border border-[#E0DBD0] dark:border-[#2B2A26] truncate max-w-[200px]">
             <Home className="w-3.5 h-3.5 text-[#706B63] dark:text-[#999388] shrink-0" />
-            <span className="truncate">{familyName || tenantName}</span>
+            <span className="truncate">{spaceDisplay}</span>
           </div>
         </div>
 
@@ -86,7 +90,7 @@ export function AppNavbar({
             }`}
           >
             <LayoutDashboard className="w-4 h-4" />
-            <span>Thư viện</span>
+            <span>{t.nav.library}</span>
           </Link>
 
           {/* Family Hub */}
@@ -99,7 +103,7 @@ export function AppNavbar({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Gia đình</span>
+            <span>{t.nav.family}</span>
           </Link>
 
           {/* Notebook */}
@@ -112,7 +116,7 @@ export function AppNavbar({
             }`}
           >
             <BookMarked className="w-4 h-4 text-[#C25E38] dark:text-[#D97750]" />
-            <span>Sổ tay</span>
+            <span>{t.nav.notebook}</span>
           </Link>
 
           {/* Collaborative Rooms */}
@@ -129,7 +133,7 @@ export function AppNavbar({
                 liveRoomsCount > 0 ? 'text-[#C25E38] animate-pulse' : 'text-[#706B63]'
               }`}
             />
-            <span>Phòng đọc</span>
+            <span>{t.nav.room}</span>
             {liveRoomsCount > 0 && (
               <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-[#FDF0EC] text-[#C25E38] dark:bg-[#281C18] dark:text-[#E08A6C] border border-[#F4D3C7] dark:border-[#3E2822]">
                 {liveRoomsCount}
@@ -138,8 +142,36 @@ export function AppNavbar({
           </Link>
         </nav>
 
-        {/* Right Section: User Profile & Role & Sign Out */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Right Section: Language Toggle, User Profile & Role & Sign Out */}
+        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+          {/* Minimalist VI | EN Language Switcher */}
+          <div className="inline-flex items-center p-0.5 rounded-lg bg-[#EFECE4] dark:bg-[#20201C] border border-[#E0DBD0] dark:border-[#2B2A26] text-[11px] font-semibold">
+            <button
+              type="button"
+              onClick={() => setLocale('vi')}
+              className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                locale === 'vi'
+                  ? 'bg-[#FFFFFF] dark:bg-[#2A2925] text-[#C25E38] dark:text-[#D97750] shadow-2xs font-bold'
+                  : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1]'
+              }`}
+              title="Tiếng Việt"
+            >
+              VI
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocale('en')}
+              className={`px-2 py-0.5 rounded-md transition cursor-pointer ${
+                locale === 'en'
+                  ? 'bg-[#FFFFFF] dark:bg-[#2A2925] text-[#C25E38] dark:text-[#D97750] shadow-2xs font-bold'
+                  : 'text-[#706B63] dark:text-[#999388] hover:text-[#23211E] dark:hover:text-[#EDE9E1]'
+              }`}
+              title="English"
+            >
+              EN
+            </button>
+          </div>
+
           <div className="hidden lg:flex flex-col items-end text-right">
             <span className="text-xs font-semibold text-[#23211E] dark:text-[#EDE9E1] truncate max-w-[160px]">
               {displayName}
@@ -164,10 +196,10 @@ export function AppNavbar({
               size="sm"
               type="submit"
               className="gap-1.5 text-xs text-[#706B63] dark:text-[#999388] hover:text-red-700 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900 transition"
-              title="Đăng xuất"
+              title={t.nav.signOut}
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Đăng xuất</span>
+              <span className="hidden sm:inline">{t.nav.signOut}</span>
             </Button>
           </form>
         </div>

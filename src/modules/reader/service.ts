@@ -3,32 +3,52 @@ import { ReadingProgress, Bookmark } from './types';
 import { Book } from '@/modules/library/types';
 
 /**
- * Retrieves book details by ID within a tenant boundary.
+ * Retrieves book details by ID, supporting cross-tenant public catalog reading.
+ * Queries strictly by bookId, returning the record and its storage tenant_id.
  */
 export async function getBookDetails(
   bookId: string,
-  tenantId: string
+  tenantId?: string
 ): Promise<Book | null> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('books')
-    .select('*')
-    .eq('id', bookId)
-    .eq('tenant_id', tenantId)
-    .single();
+  let query = supabase.from('books').select('*').eq('id', bookId);
+  if (tenantId) {
+    query = query.eq('tenant_id', tenantId);
+  }
+
+  const { data, error } = await query.single();
 
   if (error || !data) {
-    // Fallback to admin client if RLS is resolving
+    // Fallback to admin client to resolve book across tenants
     const admin = createAdminClient();
-    const { data: adminData, error: adminError } = await admin
-      .from('books')
-      .select('*')
-      .eq('id', bookId)
-      .eq('tenant_id', tenantId)
-      .single();
+    let adminQuery = admin.from('books').select('*').eq('id', bookId);
+    if (tenantId) {
+      adminQuery = adminQuery.eq('tenant_id', tenantId);
+    }
+    const { data: adminData, error: adminError } = await adminQuery.single();
 
     if (adminError || !adminData) {
+      // If tenantId was specified and failed, fallback to querying strictly by id
+      if (tenantId) {
+        const { data: fallbackData } = await admin.from('books').select('*').eq('id', bookId).single();
+        if (fallbackData) {
+          return {
+            id: fallbackData.id,
+            tenantId: fallbackData.tenant_id,
+            title: fallbackData.title,
+            author: fallbackData.author,
+            description: fallbackData.description,
+            coverUrl: fallbackData.cover_url,
+            storagePath: fallbackData.storage_path,
+            fileSize: fallbackData.file_size,
+            format: fallbackData.format,
+            processingStatus: fallbackData.processing_status,
+            createdAt: fallbackData.created_at,
+            updatedAt: fallbackData.updated_at,
+          };
+        }
+      }
       return null;
     }
 

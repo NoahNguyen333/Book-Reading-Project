@@ -9,6 +9,7 @@ import { LibraryToolbar } from './LibraryToolbar';
 import { FormatFilter, SortOption, filterAndSortBooks } from '../search';
 import { Button } from '@/components/ui';
 import { BookOpen, Plus, Sparkles, SearchX, BookPlus } from 'lucide-react';
+import { useLocale } from '@/lib/locale';
 
 interface BookCatalogProps {
   books: Book[];
@@ -25,6 +26,7 @@ export function BookCatalog({
   tenantId = '',
   userProgressMap = {},
 }: BookCatalogProps) {
+  const { t } = useLocale();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,14 +56,14 @@ export function BookCatalog({
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#23211E] dark:text-[#EDE9E1] tracking-tight">
-              Thư viện sách
+              {t.catalog.title}
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EFECE4] text-[#5B7065] dark:bg-[#252420] dark:text-[#8FA196] border border-[#E0DBD0] dark:border-[#2B2A26]">
-              {books.length} {books.length === 1 ? 'cuốn' : 'cuốn'}
+              {books.length} {t.catalog.countUnit}
             </span>
           </div>
           <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388] mt-1">
-            Kho sách điện tử mở rộng cho mọi độc giả đọc độc lập với bộ nhớ đệm thiết bị và tiến độ cá nhân.
+            {t.catalog.description}
           </p>
         </div>
 
@@ -71,20 +73,20 @@ export function BookCatalog({
               size="md"
               variant="primary"
               onClick={() => setIsUploadOpen(true)}
-              className="gap-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
+              className="gap-2 bg-[#C25E38] hover:bg-[#AF512E] text-white cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Tải sách lên</span>
+              <span>{t.catalog.uploadBook}</span>
             </Button>
           ) : (
             <Button
               size="md"
               variant="outline"
               onClick={() => setIsRequestOpen(true)}
-              className="gap-2 border-[#E6E1D6] dark:border-[#2B2A26] text-[#C25E38] dark:text-[#D97750] hover:bg-[#FDF0EC] dark:hover:bg-[#281C18]"
+              className="gap-2 border-[#E6E1D6] dark:border-[#2B2A26] text-[#C25E38] dark:text-[#D97750] hover:bg-[#FDF0EC] dark:hover:bg-[#281C18] cursor-pointer"
             >
               <BookPlus className="w-4 h-4" />
-              <span>Yêu cầu thêm sách</span>
+              <span>{t.catalog.requestBook}</span>
             </Button>
           )}
         </div>
@@ -99,12 +101,12 @@ export function BookCatalog({
           </div>
           <div className="space-y-1 max-w-sm">
             <h3 className="font-serif font-bold text-[#23211E] dark:text-[#EDE9E1] text-lg">
-              Chưa có sách nào trong thư viện
+              {t.catalog.emptyTitle}
             </h3>
             <p className="text-xs sm:text-sm text-[#706B63] dark:text-[#999388]">
               {canUpload
-                ? 'Tải lên cuốn sách EPUB hoặc PDF đầu tiên để bắt đầu trải nghiệm đọc.'
-                : 'Thư viện hiện đang trống. Hãy gửi yêu cầu thêm sách để Super Admin cập nhật!'}
+                ? t.catalog.emptyUploadDesc
+                : t.catalog.emptyRequestDesc}
             </p>
           </div>
           {canUpload ? (
@@ -112,20 +114,20 @@ export function BookCatalog({
               size="sm"
               variant="primary"
               onClick={() => setIsUploadOpen(true)}
-              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
+              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Thêm cuốn sách đầu tiên</span>
+              <span>{t.catalog.addFirstBook}</span>
             </Button>
           ) : (
             <Button
               size="sm"
               variant="primary"
               onClick={() => setIsRequestOpen(true)}
-              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white"
+              className="gap-2 mt-2 bg-[#C25E38] hover:bg-[#AF512E] text-white cursor-pointer"
             >
               <BookPlus className="w-4 h-4" />
-              <span>Yêu cầu sách mới</span>
+              <span>{t.catalog.requestNewBook}</span>
             </Button>
           )}
         </div>
@@ -152,19 +154,19 @@ export function BookCatalog({
               </div>
               <div className="space-y-1 max-w-sm">
                 <h3 className="font-serif font-bold text-[#23211E] dark:text-[#EDE9E1] text-base">
-                  Không tìm thấy sách phù hợp
+                  {t.catalog.noMatchTitle}
                 </h3>
                 <p className="text-xs text-[#706B63] dark:text-[#999388]">
-                  Không có cuốn sách nào khớp với từ khóa tìm kiếm hoặc định dạng đã chọn.
+                  {t.catalog.noMatchDesc}
                 </p>
               </div>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleClearFilters}
-                className="mt-2 text-xs"
+                className="mt-2 text-xs cursor-pointer"
               >
-                Xóa bộ lọc
+                {t.catalog.clearFilters}
               </Button>
             </div>
           ) : (
