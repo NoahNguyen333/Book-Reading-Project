@@ -20,6 +20,7 @@ import { GroupedBookAnnotations, HighlightColor, HIGHLIGHT_COLOR_CONFIGS } from 
 import { filterAnnotations, formatAnnotationsToMarkdown, parseLocationDisplay } from '../annotations/utils';
 import { deleteAnnotationAction } from '../annotations/actions';
 import { Button } from '@/components/ui';
+import { BookCover } from '@/modules/library/components/BookCover';
 
 interface KnowledgeNotebookProps {
   groupedBooks: GroupedBookAnnotations[];
@@ -214,16 +215,7 @@ export function KnowledgeNotebook({
                   >
                     {/* Cover thumbnail */}
                     <div className="w-10 h-14 shrink-0 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                      {book.coverUrl && book.coverUrl.startsWith('data:') ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={book.coverUrl}
-                          alt={book.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <BookOpen className="w-4 h-4 text-blue-500/60" />
-                      )}
+                      <BookCover book={book} size="mini" />
                     </div>
 
                     <div className="min-w-0 flex-1">

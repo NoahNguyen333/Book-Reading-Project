@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Play, BookOpen, Clock, Bookmark, Loader2 } from 'lucide-react';
+import { Play, Clock, Bookmark, Loader2 } from 'lucide-react';
 import { ActiveReadingItem } from '../types';
 import { useLocale, TranslationKey } from '@/lib/locale';
+import { BookCover } from './BookCover';
 
 interface ContinueReadingSectionProps {
   items: ActiveReadingItem[];
@@ -90,29 +91,7 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             {/* Tangible Book Cover */}
             <div className="relative w-28 sm:w-36 aspect-[2/3] shrink-0 rounded-r-lg rounded-l-xs overflow-hidden bg-[#EFECE4] dark:bg-[#1E1D1A] border border-[#E0DBD0] dark:border-[#2E2D28] shadow-md flex items-center justify-center">
-              {/* Simulated spine highlight on left edge */}
-              <div className="absolute left-0 top-0 bottom-0 w-2.5 bg-gradient-to-r from-black/25 via-white/10 to-transparent z-10 pointer-events-none" />
-
-              {leadItem.book.coverUrl && leadItem.book.coverUrl.startsWith('data:') ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={leadItem.book.coverUrl}
-                  alt={leadItem.book.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="p-3 text-center flex flex-col items-center justify-center h-full space-y-1 text-[#5B7065] dark:text-[#8FA196]">
-                  <BookOpen className="w-8 h-8 opacity-60" />
-                  <span className="font-serif font-bold text-[11px] leading-tight line-clamp-3 text-[#23211E] dark:text-[#EDE9E1]">
-                    {leadItem.book.title}
-                  </span>
-                </div>
-              )}
-
-              {/* Format Badge */}
-              <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-[#23211E]/80 text-[#EDE9E1] backdrop-blur-xs">
-                {leadItem.book.format}
-              </span>
+              <BookCover book={leadItem.book} size="hero" />
             </div>
 
             {/* Book Info */}
@@ -206,16 +185,7 @@ export function ContinueReadingSection({ items }: ContinueReadingSectionProps) {
                     <div className="flex items-center gap-3 min-w-0">
                       {/* Mini Thumbnail */}
                       <div className="w-10 h-14 shrink-0 rounded bg-[#EFECE4] dark:bg-[#1E1D1A] border border-[#E0DBD0] dark:border-[#2E2D28] overflow-hidden flex items-center justify-center">
-                        {book.coverUrl && book.coverUrl.startsWith('data:') ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={book.coverUrl}
-                            alt={book.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <BookOpen className="w-4 h-4 text-[#706B63]" />
-                        )}
+                        <BookCover book={book} size="mini" />
                       </div>
 
                       <div className="min-w-0 space-y-0.5">

@@ -3,6 +3,7 @@ export * from './storage';
 export * from './service';
 export * from './actions';
 export * from './utils';
+export * from './access';
 export * from './hooks/useBookLoader';
 export * from './components';
 export * from './annotations';

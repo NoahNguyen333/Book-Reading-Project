@@ -5,3 +5,4 @@ export * from './BookRequestModal';
 export * from './LibraryToolbar';
 export * from './ContinueReadingSection';
 export * from './UserProfileHeader';
+export * from './BookCover';
