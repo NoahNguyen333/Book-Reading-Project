@@ -1,24 +1,22 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { getCurrentUser, signOut } from '@/modules/auth';
+import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
 import { TenantProvider } from '@/modules/tenant/context';
 import { canUploadBooks } from '@/modules/entitlements';
-import { getTenantBooks } from '@/modules/library/service';
+import { getTenantBooks, getUserActiveReadingList } from '@/modules/library/service';
 import { getTenantRooms } from '@/modules/room/service';
-import { BookCatalog } from '@/modules/library/components';
-import { Button } from '@/components/ui';
+import { BookCatalog, ContinueReadingSection } from '@/modules/library/components';
+import { AppNavbar } from '@/components/layout';
 import {
   BookOpen,
-  LogOut,
   Shield,
   User as UserIcon,
   Home,
   CheckCircle2,
   Users,
   ArrowRight,
-  Radio,
 } from 'lucide-react';
 
 export const metadata = {
@@ -41,11 +39,18 @@ export default async function DashboardPage() {
   const tenantId = activeMembership?.tenant.id || '';
   const isAdmin = canUploadBooks(activeMembership?.role);
 
-  // Fetch tenant books & rooms if active space exists
-  const [books, rooms] = await Promise.all([
+  // Fetch tenant books, active rooms, and user's reading progress in parallel
+  const [books, rooms, activeReadings] = await Promise.all([
     tenantId ? getTenantBooks(tenantId) : Promise.resolve([]),
     tenantId ? getTenantRooms(tenantId) : Promise.resolve([]),
+    tenantId ? getUserActiveReadingList(tenantId, user.id) : Promise.resolve([]),
   ]);
+
+  // Construct quick lookup for book progress percentage
+  const userProgressMap: Record<string, number> = {};
+  for (const item of activeReadings) {
+    userProgressMap[item.book.id] = item.percentage;
+  }
 
   return (
     <TenantProvider
@@ -53,38 +58,18 @@ export default async function DashboardPage() {
       initialActiveTenantId={activeMembership?.tenant.id ?? null}
     >
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-        {/* Navigation Bar */}
-        <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 rounded-lg">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <span className="font-bold text-lg text-gray-900 dark:text-white">
-                Family Reading Room
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Link
-                href="/room"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 transition border border-blue-200 dark:border-blue-800"
-              >
-                <Radio className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-                <span>Live Rooms ({rooms.length})</span>
-              </Link>
-              <form action={signOut}>
-                <Button variant="outline" size="sm" type="submit" className="gap-2">
-                  <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
-                </Button>
-              </form>
-            </div>
-          </div>
-        </header>
+        {/* Unified Top Navigation Shell */}
+        <AppNavbar
+          activePath="/dashboard"
+          userName={user.fullName}
+          userEmail={user.email}
+          tenantName={activeMembership?.tenant.name}
+          role={activeMembership?.role}
+          liveRoomsCount={rooms.length}
+        />
 
         {/* Dashboard Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8 sm:space-y-10">
           {/* Welcome Header */}
           <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -92,7 +77,7 @@ export default async function DashboardPage() {
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white">
                   Welcome back, {user.fullName || user.email}!
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                   Manage your family library, upload books, and initiate synchronized reading sessions.
                 </p>
               </div>
@@ -137,12 +122,20 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Book Catalog Section (Live in Session 3) */}
+          {/* Continue Reading Section (Active Progress) */}
+          {activeReadings.length > 0 && (
+            <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
+              <ContinueReadingSection items={activeReadings} />
+            </div>
+          )}
+
+          {/* Book Catalog Section (Live with search, filter, and progress) */}
           <section className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm">
             <BookCatalog
               books={books}
               isAdmin={isAdmin}
               tenantId={tenantId}
+              userProgressMap={userProgressMap}
             />
           </section>
 
@@ -214,7 +207,7 @@ export default async function DashboardPage() {
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">
                 IndexedDB Device Cache
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                 Local blob caching engine configured for instant offline-first reading.
               </p>
               <div className="pt-2">

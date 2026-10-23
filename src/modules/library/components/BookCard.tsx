@@ -3,16 +3,17 @@
 import React, { useTransition } from 'react';
 import Link from 'next/link';
 import { Book } from '../types';
-import { BookOpen, Trash2, Loader2, ArrowRight } from 'lucide-react';
+import { BookOpen, Trash2, Loader2, ArrowRight, Play } from 'lucide-react';
 import { deleteBookAction } from '../actions';
 
 interface BookCardProps {
   book: Book;
   isAdmin: boolean;
   tenantId: string;
+  progress?: number;
 }
 
-export function BookCard({ book, isAdmin, tenantId }: BookCardProps) {
+export function BookCard({ book, isAdmin, tenantId, progress }: BookCardProps) {
   const [isDeleting, startDeleteTransition] = useTransition();
 
   const handleDelete = () => {
@@ -50,7 +51,11 @@ export function BookCard({ book, isAdmin, tenantId }: BookCardProps) {
         )}
 
         <div className="absolute top-3 left-3">
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-600 text-white shadow-sm">
+          <span
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white shadow-sm ${
+              book.format?.toLowerCase() === 'pdf' ? 'bg-rose-600' : 'bg-blue-600'
+            }`}
+          >
             {book.format}
           </span>
         </div>
@@ -82,18 +87,46 @@ export function BookCard({ book, isAdmin, tenantId }: BookCardProps) {
           </p>
         </div>
 
+        {/* Optional Reading Progress Bar */}
+        {typeof progress === 'number' && progress > 0 && (
+          <div className="space-y-1 pt-1">
+            <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+              <span>Progress</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400">
+                {Math.round(progress)}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-600 dark:bg-blue-500 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, Math.round(progress)))}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800 text-[11px] text-gray-400">
           <span>{formattedSize}</span>
           <span className="capitalize">{book.processingStatus}</span>
         </div>
 
-        <Link
-          href={`/reader/${book.id}`}
-          className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition"
-        >
-          <span>Read Book</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
+        {typeof progress === 'number' && progress > 0 ? (
+          <Link
+            href={`/reader/${book.id}`}
+            className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Resume</span>
+          </Link>
+        ) : (
+          <Link
+            href={`/reader/${book.id}`}
+            className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition"
+          >
+            <span>Read Book</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        )}
       </div>
     </div>
   );

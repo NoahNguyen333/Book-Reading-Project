@@ -19,3 +19,10 @@ export interface BookUploadInput {
   description?: string;
   file: File | Blob;
 }
+
+export interface ActiveReadingItem {
+  book: Book;
+  percentage: number;
+  cfi: string;
+  updatedAt: string;
+}

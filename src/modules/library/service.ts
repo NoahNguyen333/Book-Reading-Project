@@ -1,5 +1,87 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { Book } from './types';
+import { Book, ActiveReadingItem } from './types';
+
+/**
+ * Retrieves the user's active reading progress records joined with books for a tenant.
+ * Filters for percentage > 0, ordered from most recently read to least recently read.
+ */
+export async function getUserActiveReadingList(
+  tenantId: string,
+  userId: string
+): Promise<ActiveReadingItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('reading_progress')
+    .select('id, book_id, percentage, cfi, updated_at, books(*)')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+    .gt('percentage', 0)
+    .order('updated_at', { ascending: false });
+
+  let progressRows = data;
+
+  if (error || !progressRows) {
+    const admin = createAdminClient();
+    const { data: adminData, error: adminError } = await admin
+      .from('reading_progress')
+      .select('id, book_id, percentage, cfi, updated_at, books(*)')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', userId)
+      .gt('percentage', 0)
+      .order('updated_at', { ascending: false });
+
+    if (adminError || !adminData) {
+      return [];
+    }
+    progressRows = adminData;
+  }
+
+  const items: ActiveReadingItem[] = [];
+  const missingBookIds: string[] = [];
+
+  for (const row of progressRows) {
+    const rawBook = Array.isArray(row.books) ? row.books[0] : row.books;
+    if (rawBook && rawBook.id) {
+      items.push({
+        book: mapDbBookToDomain(rawBook),
+        percentage: Number(row.percentage) || 0,
+        cfi: row.cfi,
+        updatedAt: row.updated_at,
+      });
+    } else if (row.book_id) {
+      missingBookIds.push(row.book_id);
+    }
+  }
+
+  // Fallback in case PostgREST did not embed the foreign key books relation
+  if (missingBookIds.length > 0) {
+    const admin = createAdminClient();
+    const { data: booksData } = await admin
+      .from('books')
+      .select('*')
+      .in('id', missingBookIds);
+
+    if (booksData) {
+      const bookMap = new Map(booksData.map((b) => [b.id, mapDbBookToDomain(b)]));
+      for (const row of progressRows) {
+        if (!items.some((i) => i.book.id === row.book_id)) {
+          const book = bookMap.get(row.book_id);
+          if (book) {
+            items.push({
+              book,
+              percentage: Number(row.percentage) || 0,
+              cfi: row.cfi,
+              updatedAt: row.updated_at,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return items;
+}
 
 /**
  * Retrieves all books for a specific tenant, ordered from newest to oldest.
