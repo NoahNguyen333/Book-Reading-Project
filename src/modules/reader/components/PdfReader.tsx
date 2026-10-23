@@ -74,7 +74,7 @@ export function PdfReader({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
-  const currentRenderTaskRef = useRef<RenderTask | null>(null);
+  const renderTaskRef = useRef<RenderTask | null>(null);
 
   const onLocationChangeRef = useRef(onLocationChange);
   onLocationChangeRef.current = onLocationChange;
@@ -176,8 +176,13 @@ export function PdfReader({
 
     return () => {
       isCancelled = true;
-      if (currentRenderTaskRef.current) {
-        currentRenderTaskRef.current.cancel();
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          // Ignore cancellation errors
+        }
+        renderTaskRef.current = null;
       }
       pdfDocRef.current?.cleanup();
     };
@@ -190,10 +195,14 @@ export function PdfReader({
       const canvas = canvasRef.current;
       if (!doc || !canvas) return;
 
-      // Cancel any ongoing rendering task to prevent canvas collision
-      if (currentRenderTaskRef.current) {
-        currentRenderTaskRef.current.cancel();
-        currentRenderTaskRef.current = null;
+      // 1. Cancel any active render task before starting a new one
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          // Ignore cancellation errors
+        }
+        renderTaskRef.current = null;
       }
 
       setIsPageRendering(true);
@@ -201,57 +210,87 @@ export function PdfReader({
         const page = await doc.getPage(pageNum);
         const viewport = page.getViewport({ scale });
 
-        // Set high-DPI resolution
-        const outputScale = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
+        // 2. Explicit device pixel-ratio scaling & canvas sizing guarantee
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
 
         const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+        if (!ctx) return;
 
-          const renderContext = {
-            canvasContext: ctx,
-            viewport,
-          };
+        // Clear canvas context prior to rendering and apply scaling
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
 
+        const renderContext = {
+          canvasContext: ctx,
+          viewport,
+        };
+
+        // 3. Render page canvas with isolated cancellation handling
+        try {
           // @ts-expect-error pdfjs render parameters
-          const renderTask = page.render(renderContext);
-          currentRenderTaskRef.current = renderTask;
-
-          await renderTask.promise;
-
-          // Extract text content for selectable text overlay layer
-          try {
-            const textContent = await page.getTextContent();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const items = (textContent.items as any[])
-              .filter((it) => it.str && it.str.trim())
-              .map((it) => {
-                const tx = it.transform;
-                const x = tx[4] * scale;
-                const y = viewport.height - (tx[5] * scale);
-                return {
-                  str: String(it.str),
-                  left: x,
-                  top: Math.max(0, y - ((it.height || 12) * scale)),
-                  width: (it.width || 20) * scale,
-                  height: (it.height || 12) * scale,
-                  fontSize: Math.max(8, Math.abs(tx[0] || 12) * scale),
-                };
-              });
-            setTextItems(items);
-          } catch {
-            // Text layer extraction fallback
+          renderTaskRef.current = page.render(renderContext);
+          await renderTaskRef.current.promise;
+        } catch (err: unknown) {
+          if (
+            err &&
+            typeof err === 'object' &&
+            'name' in err &&
+            err.name === 'RenderingCancelledException'
+          ) {
+            // Expected when navigating between pages quickly - do not break state
+            return;
           }
+          console.error('PDF page render error:', err);
+        } finally {
+          renderTaskRef.current = null;
         }
+
+        // 4. Non-blocking asynchronous text layer extraction (does not block visual canvas)
+        page
+          .getTextContent()
+          .then((textContent) => {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const items = (textContent.items as any[])
+                .filter((it) => it.str && it.str.trim())
+                .map((it) => {
+                  const tx = it.transform;
+                  const x = tx[4] * scale;
+                  const y = viewport.height - tx[5] * scale;
+                  return {
+                    str: String(it.str),
+                    left: x,
+                    top: Math.max(0, y - (it.height || 12) * scale),
+                    width: (it.width || 20) * scale,
+                    height: (it.height || 12) * scale,
+                    fontSize: Math.max(8, Math.abs(tx[0] || 12) * scale),
+                  };
+                });
+              setTextItems(items);
+            } catch {
+              // Ignore text layer mapping errors
+            }
+          })
+          .catch((err) => {
+            // Non-blocking: Scanned PDF or page without selectable text streams
+            console.debug('Text extraction skipped for page:', pageNum, err);
+            setTextItems([]);
+          });
       } catch (err: unknown) {
-        // Ignore expected cancellation errors
-        if (err && typeof err === 'object' && 'name' in err && err.name !== 'RenderingCancelledException') {
-          console.warn('Page render error:', err);
+        if (
+          err &&
+          typeof err === 'object' &&
+          'name' in err &&
+          err.name === 'RenderingCancelledException'
+        ) {
+          return;
         }
+        console.error('Failed to load PDF page:', err);
       } finally {
         setIsPageRendering(false);
       }
@@ -618,7 +657,7 @@ export function PdfReader({
         onMouseUp={handleMouseUp}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4"
+        className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4 min-h-[80vh]"
       >
         {isDocumentLoading ? (
           <div className="flex flex-col items-center justify-center space-y-3">
@@ -626,7 +665,7 @@ export function PdfReader({
             <p className="text-xs font-semibold text-gray-400">Loading PDF document...</p>
           </div>
         ) : (
-          <div className="relative shadow-2xl rounded-sm transition-all duration-150">
+          <div className="relative shadow-2xl rounded-sm transition-all duration-150 min-h-[600px] flex items-center justify-center">
             {isPageRendering && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/10 dark:bg-white/5 backdrop-blur-[1px]">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
