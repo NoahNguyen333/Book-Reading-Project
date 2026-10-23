@@ -2,8 +2,10 @@ import { redirect, notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
-import { canReadBooks, canManageRoom } from '@/modules/entitlements';
+import { canReadBooks, canManageRoom, canUploadBooks } from '@/modules/entitlements';
 import { getRoomById } from '@/modules/room/service';
+import { getBookAnnotations } from '@/modules/reader/annotations/service';
+import { Annotation } from '@/modules/reader/annotations/types';
 import { CollaborativeReader } from '@/modules/room/components';
 
 interface RoomPageProps {
@@ -50,13 +52,25 @@ export default async function RoomPage({ params }: RoomPageProps) {
   }
 
   const isHost = canManageRoom(activeMembership.role) || room.sessionState?.hostUserId === user.id;
+  const isAdmin = canUploadBooks(activeMembership.role);
+
+  let initialAnnotations: Annotation[] = [];
+  if (room.activeBookId) {
+    try {
+      initialAnnotations = await getBookAnnotations(room.activeBookId, tenantId, user.id);
+    } catch {
+      // Safe fallback
+    }
+  }
 
   return (
     <CollaborativeReader
       room={room}
       currentUser={user}
       isHost={isHost}
+      isAdmin={isAdmin}
       tenantId={tenantId}
+      initialAnnotations={initialAnnotations}
     />
   );
 }

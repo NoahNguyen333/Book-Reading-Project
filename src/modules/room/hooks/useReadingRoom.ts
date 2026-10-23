@@ -10,6 +10,7 @@ import {
   mergeRoomSessionState,
 } from '../utils';
 import { updateRoomSyncStateAction } from '../actions';
+import { Annotation } from '@/modules/reader/annotations/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface UseReadingRoomProps {
@@ -20,6 +21,7 @@ export interface UseReadingRoomProps {
   initialSessionState?: RoomSessionState;
   currentLocation?: string | null;
   onSyncLocation?: (location: string) => void;
+  onAnnotationBroadcast?: (annotation: Annotation) => void;
 }
 
 export interface UseReadingRoomResult {
@@ -28,6 +30,7 @@ export interface UseReadingRoomResult {
   isFollowingHost: boolean;
   setIsFollowingHost: (follow: boolean) => void;
   broadcastPosition: (location: string, percentage: number) => void;
+  broadcastAnnotation: (annotation: Annotation) => void;
   connectionStatus: 'connecting' | 'connected' | 'disconnected';
 }
 
@@ -46,6 +49,7 @@ export function useReadingRoom({
   initialSessionState = {},
   currentLocation,
   onSyncLocation,
+  onAnnotationBroadcast,
 }: UseReadingRoomProps): UseReadingRoomResult {
   const [onlineUsers, setOnlineUsers] = useState<RoomParticipant[]>([]);
   const [sessionState, setSessionState] = useState<RoomSessionState>(initialSessionState);
@@ -63,6 +67,9 @@ export function useReadingRoom({
 
   const onSyncLocationRef = useRef(onSyncLocation);
   onSyncLocationRef.current = onSyncLocation;
+
+  const onAnnotationBroadcastRef = useRef(onAnnotationBroadcast);
+  onAnnotationBroadcastRef.current = onAnnotationBroadcast;
 
   // Handle incoming host position change
   const handleHostMovement = useCallback(
@@ -135,6 +142,12 @@ export function useReadingRoom({
             payload.hostUserId,
             payload.hostName
           );
+        }
+      })
+      // Broadcast Handler: Instant peer-to-peer live annotation broadcast
+      .on('broadcast', { event: 'room-annotation-added' }, ({ payload }) => {
+        if (payload?.annotation) {
+          onAnnotationBroadcastRef.current?.(payload.annotation as Annotation);
         }
       })
       // Postgres Changes Fallback: Listens to updates to reading_rooms table
@@ -216,12 +229,22 @@ export function useReadingRoom({
     [isHost, currentUser, roomId, tenantId]
   );
 
+  // Live room annotation broadcast action
+  const broadcastAnnotation = useCallback((annotation: Annotation) => {
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'room-annotation-added',
+      payload: { annotation },
+    });
+  }, []);
+
   return {
     onlineUsers,
     sessionState,
     isFollowingHost,
     setIsFollowingHost,
     broadcastPosition,
+    broadcastAnnotation,
     connectionStatus,
   };
 }

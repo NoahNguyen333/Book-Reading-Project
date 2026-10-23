@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
+import { canUploadBooks } from '@/modules/entitlements';
 import { getBookDetails, getUserReadingProgress, getBookmarks } from '@/modules/reader/service';
 import { getBookAnnotations } from '@/modules/reader/annotations/service';
 import { ReaderContainer } from '@/modules/reader/components';
@@ -103,6 +104,7 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
           initialAnnotations={annotations}
           bookTitle={book.title}
           currentUserId={user.id}
+          isAdmin={canUploadBooks(activeMembership.role)}
           format={book.format}
         />
       </main>

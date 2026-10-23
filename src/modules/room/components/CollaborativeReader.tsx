@@ -2,8 +2,9 @@
 
 import React, { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { BookOpen, ArrowLeft } from 'lucide-react';
+import { BookOpen, ArrowLeft, Highlighter } from 'lucide-react';
 import { AuthUser } from '@/modules/auth/types';
+import { Annotation } from '@/modules/reader/annotations/types';
 import { ReadingRoom } from '../types';
 import { useReadingRoom } from '../hooks/useReadingRoom';
 import { RoomHeader } from './RoomHeader';
@@ -14,14 +15,18 @@ interface CollaborativeReaderProps {
   room: ReadingRoom;
   currentUser: AuthUser;
   isHost: boolean;
+  isAdmin?: boolean;
   tenantId: string;
+  initialAnnotations?: Annotation[];
 }
 
 export function CollaborativeReader({
   room,
   currentUser,
   isHost,
+  isAdmin = false,
   tenantId,
+  initialAnnotations = [],
 }: CollaborativeReaderProps) {
   const [currentLocation, setCurrentLocation] = useState<string | null>(
     room.sessionState?.location || null
@@ -29,10 +34,29 @@ export function CollaborativeReader({
   const [syncedLocation, setSyncedLocation] = useState<string | null>(
     room.sessionState?.location || null
   );
+  const [liveAnnotation, setLiveAnnotation] = useState<Annotation | null>(null);
+  const [broadcastNotice, setBroadcastNotice] = useState<{
+    text: string;
+    userName: string;
+  } | null>(null);
 
   const handleSyncLocation = useCallback((location: string) => {
     setSyncedLocation(location);
     setCurrentLocation(location);
+  }, []);
+
+  const handleAnnotationBroadcast = useCallback((newAnn: Annotation) => {
+    setLiveAnnotation(newAnn);
+    setBroadcastNotice({
+      text:
+        newAnn.highlightedText.length > 45
+          ? `${newAnn.highlightedText.slice(0, 45)}...`
+          : newAnn.highlightedText,
+      userName: newAnn.userName || 'A family member',
+    });
+    setTimeout(() => {
+      setBroadcastNotice(null);
+    }, 4500);
   }, []);
 
   const {
@@ -41,6 +65,7 @@ export function CollaborativeReader({
     isFollowingHost,
     setIsFollowingHost,
     broadcastPosition,
+    broadcastAnnotation,
     connectionStatus,
   } = useReadingRoom({
     roomId: room.id,
@@ -50,7 +75,17 @@ export function CollaborativeReader({
     initialSessionState: room.sessionState,
     currentLocation,
     onSyncLocation: handleSyncLocation,
+    onAnnotationBroadcast: handleAnnotationBroadcast,
   });
+
+  const handleAnnotationCreated = useCallback(
+    (created: Annotation) => {
+      if (created.isShared) {
+        broadcastAnnotation(created);
+      }
+    },
+    [broadcastAnnotation]
+  );
 
   const handleLocationChange = useCallback(
     (loc: string, pct: number) => {
@@ -116,15 +151,32 @@ export function CollaborativeReader({
       />
 
       <main className="relative flex-1 w-full h-full overflow-hidden">
+        {/* Real-time shared annotation notification banner */}
+        {broadcastNotice && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/25 border border-white/20 animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-none">
+            <Highlighter className="w-4 h-4 text-amber-300 animate-pulse shrink-0" />
+            <div className="text-xs">
+              <span className="font-semibold">{broadcastNotice.userName}</span>
+              <span className="opacity-90"> shared a highlight: </span>
+              <span className="italic font-medium">&ldquo;{broadcastNotice.text}&rdquo;</span>
+            </div>
+          </div>
+        )}
+
         <ReaderContainer
           bookId={room.activeBook.id}
           tenantId={tenantId}
           bookTitle={room.activeBook.title}
           format={room.activeBook.format || 'epub'}
           initialCfi={room.sessionState?.location || null}
+          initialAnnotations={initialAnnotations}
+          currentUserId={currentUser.id}
+          isAdmin={isAdmin}
           externalLocation={isFollowingHost ? syncedLocation : null}
           onLocationChange={handleLocationChange}
           disableProgressSave={isFollowingHost && !isHost}
+          onAnnotationCreated={handleAnnotationCreated}
+          liveAnnotation={liveAnnotation}
         />
 
         <SyncController

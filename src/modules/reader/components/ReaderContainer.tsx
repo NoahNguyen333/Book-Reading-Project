@@ -17,10 +17,13 @@ interface ReaderContainerProps {
   initialAnnotations?: Annotation[];
   bookTitle?: string;
   currentUserId?: string;
+  isAdmin?: boolean;
   format?: string;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
   disableProgressSave?: boolean;
+  onAnnotationCreated?: (annotation: Annotation) => void;
+  liveAnnotation?: Annotation | null;
 }
 
 export function ReaderContainer({
@@ -31,10 +34,13 @@ export function ReaderContainer({
   initialAnnotations = [],
   bookTitle,
   currentUserId,
+  isAdmin = false,
   format = 'epub',
   externalLocation,
   onLocationChange,
   disableProgressSave = false,
+  onAnnotationCreated,
+  liveAnnotation,
 }: ReaderContainerProps) {
   const { bookData, isLoading, error, source, progress } = useBookLoader(bookId, tenantId);
 
@@ -117,9 +123,12 @@ export function ReaderContainer({
         initialAnnotations={initialAnnotations}
         bookTitle={bookTitle}
         currentUserId={currentUserId}
+        isAdmin={isAdmin}
         externalLocation={externalLocation}
         onLocationChange={onLocationChange}
         disableProgressSave={disableProgressSave}
+        onAnnotationCreated={onAnnotationCreated}
+        liveAnnotation={liveAnnotation}
       />
     );
   }
@@ -134,9 +143,12 @@ export function ReaderContainer({
       initialAnnotations={initialAnnotations}
       bookTitle={bookTitle}
       currentUserId={currentUserId}
+      isAdmin={isAdmin}
       externalLocation={externalLocation}
       onLocationChange={onLocationChange}
       disableProgressSave={disableProgressSave}
+      onAnnotationCreated={onAnnotationCreated}
+      liveAnnotation={liveAnnotation}
     />
   );
 }

@@ -47,9 +47,12 @@ interface PdfReaderProps {
   initialAnnotations?: Annotation[];
   bookTitle?: string;
   currentUserId?: string;
+  isAdmin?: boolean;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
   disableProgressSave?: boolean;
+  onAnnotationCreated?: (annotation: Annotation) => void;
+  liveAnnotation?: Annotation | null;
 }
 
 export function PdfReader({
@@ -61,9 +64,12 @@ export function PdfReader({
   initialAnnotations = [],
   bookTitle,
   currentUserId,
+  isAdmin = false,
   externalLocation,
   onLocationChange,
   disableProgressSave = false,
+  onAnnotationCreated,
+  liveAnnotation,
 }: PdfReaderProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,6 +97,19 @@ export function PdfReader({
   const [isAnnotationsOpen, setIsAnnotationsOpen] = useState(false);
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+  const [isToolbarVisible, setIsToolbarVisible] = useState(true);
+
+  // Touch gesture ref
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  // Live incoming annotation sync (from reading room broadcast)
+  useEffect(() => {
+    if (!liveAnnotation) return;
+    setAnnotations((prev) => {
+      if (prev.some((a) => a.id === liveAnnotation.id)) return prev;
+      return [liveAnnotation, ...prev];
+    });
+  }, [liveAnnotation]);
 
   // Selection & Text Layer
   const [selectionState, setSelectionState] = useState<{
@@ -274,6 +293,52 @@ export function PdfReader({
     setCurrentPage((p) => Math.min(totalPages, p + 1));
   }, [totalPages]);
 
+  // Mobile Touch & Gesture Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const elapsed = Date.now() - touchStartRef.current.time;
+    touchStartRef.current = null;
+
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) return;
+
+    // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
+      if (deltaX < 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+      return;
+    }
+
+    // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
+    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relativeX = (touch.clientX - rect.left) / rect.width;
+      if (relativeX < 0.2) {
+        handlePrev();
+      } else if (relativeX > 0.8) {
+        handleNext();
+      } else {
+        setIsToolbarVisible((v) => !v);
+      }
+    }
+  };
+
   // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -390,6 +455,7 @@ export function PdfReader({
 
       if (res.data) {
         setAnnotations((prev) => [res.data!, ...prev]);
+        onAnnotationCreated?.(res.data);
       }
     } catch (err) {
       console.warn('Failed to save highlight:', err);
@@ -430,8 +496,14 @@ export function PdfReader({
       className="relative flex flex-col h-full w-full overflow-hidden select-none transition-colors duration-200"
       style={{ backgroundColor: themeStyles.background, color: themeStyles.foreground }}
     >
-      {/* Top Controls Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-black/10 dark:border-white/10 shrink-0 z-20">
+      {/* Top Controls Toolbar with Smooth Mobile Collapsing */}
+      <div
+        className={`flex items-center justify-between px-4 border-b border-black/10 dark:border-white/10 shrink-0 z-20 transition-all duration-300 ${
+          isToolbarVisible
+            ? 'h-14 opacity-100 py-2'
+            : 'h-0 opacity-0 -translate-y-full pointer-events-none py-0 overflow-hidden'
+        }`}
+      >
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsBookmarksOpen(!isBookmarksOpen)}
@@ -540,10 +612,12 @@ export function PdfReader({
         </div>
       </div>
 
-      {/* Main Canvas Viewport */}
+      {/* Main Canvas Viewport with Touch Zones & Gestures */}
       <div
         ref={containerRef}
         onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4"
       >
         {isDocumentLoading ? (
@@ -688,6 +762,9 @@ export function PdfReader({
         onDeleteAnnotation={handleDeleteAnnotation}
         bookTitle={bookTitle}
         currentUserId={currentUserId}
+        tenantId={tenantId}
+        bookId={bookId}
+        isAdmin={isAdmin}
       />
 
       {/* In-Reader Highlight Context Menu Popover */}

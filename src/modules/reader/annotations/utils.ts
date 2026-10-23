@@ -146,3 +146,90 @@ export function formatAnnotationsToMarkdown(book: Book, annotations: Annotation[
 
   return lines.join('\n');
 }
+
+/**
+ * Validates comment content for threaded discussions.
+ */
+export function validateCommentContent(content?: string | null): {
+  isValid: boolean;
+  error?: string;
+  cleanContent: string;
+} {
+  if (!content) {
+    return { isValid: false, error: 'Comment cannot be empty.', cleanContent: '' };
+  }
+  const clean = content.trim();
+  if (clean.length === 0) {
+    return { isValid: false, error: 'Comment cannot consist only of whitespace.', cleanContent: '' };
+  }
+  if (clean.length > 2000) {
+    return {
+      isValid: false,
+      error: 'Comment cannot exceed 2,000 characters.',
+      cleanContent: clean,
+    };
+  }
+  return { isValid: true, cleanContent: clean };
+}
+
+/**
+ * Evaluates whether a user is authorized to delete a specific comment.
+ */
+export function canDeleteComment(
+  commentUserId: string,
+  currentUserId?: string | null,
+  isAdmin: boolean = false
+): boolean {
+  if (!currentUserId) return false;
+  if (isAdmin) return true;
+  return commentUserId === currentUserId;
+}
+
+/**
+ * Produces friendly relative timestamps for comments ("Just now", "5m ago", "2h ago", "Yesterday").
+ */
+export function formatRelativeCommentTime(dateString: string): string {
+  try {
+    const timestamp = new Date(dateString).getTime();
+    if (isNaN(timestamp)) return '';
+
+    const now = Date.now();
+    const diffSeconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+
+    if (diffSeconds < 60) return 'Just now';
+
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return new Date(dateString).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Derives a clean 1-2 letter initial representation for avatar rendering.
+ */
+export function getUserInitials(name?: string | null, email?: string | null): string {
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  if (email && email.trim()) {
+    return email.trim().slice(0, 2).toUpperCase();
+  }
+  return 'U';
+}

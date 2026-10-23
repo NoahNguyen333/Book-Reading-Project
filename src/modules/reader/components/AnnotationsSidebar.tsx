@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Annotation, HighlightColor, HIGHLIGHT_COLOR_CONFIGS } from '../annotations/types';
 import { parseLocationDisplay } from '../annotations/utils';
+import { AnnotationThread } from './AnnotationThread';
 
 interface AnnotationsSidebarProps {
   isOpen: boolean;
@@ -22,6 +23,9 @@ interface AnnotationsSidebarProps {
   onDeleteAnnotation?: (id: string) => Promise<void>;
   bookTitle?: string;
   currentUserId?: string;
+  tenantId?: string;
+  bookId?: string;
+  isAdmin?: boolean;
 }
 
 export function AnnotationsSidebar({
@@ -32,6 +36,9 @@ export function AnnotationsSidebar({
   onDeleteAnnotation,
   bookTitle,
   currentUserId,
+  tenantId,
+  bookId,
+  isAdmin = false,
 }: AnnotationsSidebarProps) {
   const [selectedColor, setSelectedColor] = useState<HighlightColor | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,7 +73,7 @@ export function AnnotationsSidebar({
   return (
     <aside
       aria-label="Book Annotations Sidebar"
-      className="fixed inset-y-0 right-0 z-40 w-full sm:w-96 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200"
+      className="fixed inset-y-0 right-0 z-50 w-full sm:w-96 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 max-h-screen"
     >
       {/* Top Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
@@ -228,6 +235,17 @@ export function AnnotationsSidebar({
                     <MessageSquare className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
                     <p className="leading-snug">{ann.note}</p>
                   </div>
+                )}
+
+                {/* Nested Discussion Threads */}
+                {tenantId && (
+                  <AnnotationThread
+                    annotationId={ann.id}
+                    tenantId={tenantId}
+                    currentUserId={currentUserId}
+                    isAdmin={isAdmin}
+                    bookId={bookId}
+                  />
                 )}
               </div>
             );

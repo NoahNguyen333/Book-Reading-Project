@@ -35,6 +35,25 @@ export interface GroupedBookAnnotations {
   lastAnnotatedAt: string;
 }
 
+export interface AnnotationComment {
+  id: string;
+  annotationId: string;
+  tenantId: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCommentInput {
+  annotationId: string;
+  tenantId: string;
+  content: string;
+  bookId?: string;
+}
+
 export const HIGHLIGHT_COLOR_CONFIGS: Record<
   HighlightColor,
   {

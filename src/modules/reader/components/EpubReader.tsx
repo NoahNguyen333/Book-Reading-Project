@@ -46,9 +46,12 @@ interface EpubReaderProps {
   initialAnnotations?: Annotation[];
   bookTitle?: string;
   currentUserId?: string;
+  isAdmin?: boolean;
   externalLocation?: string | null;
   onLocationChange?: (location: string, percentage: number) => void;
   disableProgressSave?: boolean;
+  onAnnotationCreated?: (annotation: Annotation) => void;
+  liveAnnotation?: Annotation | null;
 }
 
 export function EpubReader({
@@ -60,9 +63,12 @@ export function EpubReader({
   initialAnnotations = [],
   bookTitle,
   currentUserId,
+  isAdmin = false,
   externalLocation,
   onLocationChange,
   disableProgressSave = false,
+  onAnnotationCreated,
+  liveAnnotation,
 }: EpubReaderProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<Book | null>(null);
@@ -89,6 +95,10 @@ export function EpubReader({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
+  const [isToolbarVisible, setIsToolbarVisible] = useState(true);
+
+  // Touch & Swipe gesture refs
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   // In-Reader Text Selection State
   const [selectionState, setSelectionState] = useState<{
@@ -103,6 +113,28 @@ export function EpubReader({
   useEffect(() => {
     initialAnnotationsRef.current = initialAnnotations;
   }, [initialAnnotations]);
+
+  // Live incoming annotation sync (from reading room broadcast)
+  useEffect(() => {
+    if (!liveAnnotation) return;
+    setAnnotations((prev) => {
+      if (prev.some((a) => a.id === liveAnnotation.id)) return prev;
+      return [liveAnnotation, ...prev];
+    });
+
+    try {
+      const cfg = HIGHLIGHT_COLOR_CONFIGS[liveAnnotation.color];
+      renditionRef.current?.annotations.highlight(
+        liveAnnotation.location,
+        {},
+        () => {},
+        'hl-' + liveAnnotation.id,
+        { fill: cfg.hex, 'fill-opacity': '0.35' }
+      );
+    } catch {
+      // Safe skip if location cannot be marked
+    }
+  }, [liveAnnotation]);
 
   const syncProgressDebounced = useCallback(
     (cfi: string, pct: number) => {
@@ -280,6 +312,52 @@ export function EpubReader({
     renditionRef.current?.next();
   }, []);
 
+  // Mobile Touch & Gesture Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const elapsed = Date.now() - touchStartRef.current.time;
+    touchStartRef.current = null;
+
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) return;
+
+    // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
+      if (deltaX < 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+      return;
+    }
+
+    // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
+    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relativeX = (touch.clientX - rect.left) / rect.width;
+      if (relativeX < 0.2) {
+        handlePrev();
+      } else if (relativeX > 0.8) {
+        handleNext();
+      } else {
+        setIsToolbarVisible((v) => !v);
+      }
+    }
+  };
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -349,6 +427,7 @@ export function EpubReader({
 
       if (res.data) {
         setAnnotations((prev) => [res.data!, ...prev]);
+        onAnnotationCreated?.(res.data);
 
         // Draw highlight overlay on rendition
         try {
@@ -395,8 +474,14 @@ export function EpubReader({
       className="relative flex flex-col h-full w-full overflow-hidden select-none transition-colors duration-200"
       style={{ backgroundColor: themeStyles.background, color: themeStyles.foreground }}
     >
-      {/* Top Controls Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-black/10 dark:border-white/10 shrink-0 z-20">
+      {/* Top Controls Toolbar with Smooth Mobile Collapsing */}
+      <div
+        className={`flex items-center justify-between px-4 border-b border-black/10 dark:border-white/10 shrink-0 z-20 transition-all duration-300 ${
+          isToolbarVisible
+            ? 'h-14 opacity-100 py-2'
+            : 'h-0 opacity-0 -translate-y-full pointer-events-none py-0 overflow-hidden'
+        }`}
+      >
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsTocOpen(!isTocOpen)}
@@ -443,8 +528,12 @@ export function EpubReader({
         </div>
       </div>
 
-      {/* Main Reading Canvas */}
-      <div className="relative flex-1 w-full h-full overflow-hidden">
+      {/* Main Reading Canvas with Touch Zones & Swipe Detection */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="relative flex-1 w-full h-full overflow-hidden"
+      >
         {/* Previous Page Button (Left Edge) */}
         <button
           onClick={handlePrev}
@@ -683,6 +772,9 @@ export function EpubReader({
         onDeleteAnnotation={handleDeleteAnnotation}
         bookTitle={bookTitle}
         currentUserId={currentUserId}
+        tenantId={tenantId}
+        bookId={bookId}
+        isAdmin={isAdmin}
       />
 
       {/* In-Reader Highlight Context Menu Popover */}
