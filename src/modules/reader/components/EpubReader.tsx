@@ -35,6 +35,13 @@ import {
   clampFontSize,
   DEFAULT_FONT_SIZE,
 } from '../utils';
+import {
+  classifyTouchGesture,
+  injectResilientEpubStyles,
+  hasActiveSelection,
+  isInteractiveElement,
+  attachContentsCleanup,
+} from '../gestures';
 import { saveReadingProgressAction, addBookmarkAction, deleteBookmarkAction } from '../actions';
 
 interface EpubReaderProps {
@@ -99,6 +106,39 @@ export function EpubReader({
 
   // Touch & Swipe gesture refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const isMultiTouchRef = useRef(false);
+  const isTurningRef = useRef(false);
+
+  const currentCfiRef = useRef(currentCfi);
+  currentCfiRef.current = currentCfi;
+  const isInitialMountRef = useRef(true);
+  const fontResizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fontResizeRafRef = useRef<number | null>(null);
+  const contentAbortControllersRef = useRef<Set<AbortController>>(new Set());
+
+  // Page Navigation Handlers with debounce lock to prevent duplicate page turns
+  const handlePrev = useCallback(() => {
+    if (isTurningRef.current) return;
+    isTurningRef.current = true;
+    renditionRef.current?.prev();
+    setTimeout(() => {
+      isTurningRef.current = false;
+    }, 350);
+  }, []);
+
+  const handleNext = useCallback(() => {
+    if (isTurningRef.current) return;
+    isTurningRef.current = true;
+    renditionRef.current?.next();
+    setTimeout(() => {
+      isTurningRef.current = false;
+    }, 350);
+  }, []);
+
+  const handlePrevRef = useRef(handlePrev);
+  handlePrevRef.current = handlePrev;
+  const handleNextRef = useRef(handleNext);
+  handleNextRef.current = handleNext;
 
   // In-Reader Text Selection State
   const [selectionState, setSelectionState] = useState<{
@@ -156,6 +196,8 @@ export function EpubReader({
   useEffect(() => {
     if (!viewerRef.current || !bookData) return;
 
+    const activeControllers = contentAbortControllersRef.current;
+
     // Create Book instance from in-memory ArrayBuffer
     const book = ePub(bookData);
     bookRef.current = book;
@@ -175,65 +217,116 @@ export function EpubReader({
     rendition.themes.select('light');
     rendition.themes.fontSize(`${DEFAULT_FONT_SIZE}px`);
 
-    // Register passive touch and gesture listeners inside iframe to avoid scroll-blocking jank
+    // Register resilient styles and touch navigation listeners on iframe content
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (rendition as any).hooks?.content?.register?.((contents: any) => {
+      // Guard against late registration after this rendition instance has been destroyed or replaced
+      if (!renditionRef.current || renditionRef.current !== rendition) return;
+
       const doc = contents?.document;
       if (!doc) return;
 
+      // 1. Inject resilient CSS rules (overflow, responsive media, tables, SVG)
+      injectResilientEpubStyles(doc);
+
+      // 2. Prevent duplicate event listener registration if hook re-executes
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((doc as any).__frr_touch_registered) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (doc as any).__frr_touch_registered = true;
+
+      // 3. Attach lifecycle-safe cleanup on view destruction or iframe unload
+      const { abortController } = attachContentsCleanup(
+        contents,
+        doc,
+        (controller) => {
+          contentAbortControllersRef.current.delete(controller);
+        }
+      );
+      contentAbortControllersRef.current.add(abortController);
+
       let iframeTouchStart: { x: number; y: number; time: number } | null = null;
+      let isIframeMultiTouch = false;
 
       doc.addEventListener(
         'touchstart',
         (e: TouchEvent) => {
-          if (e.touches.length === 1) {
-            iframeTouchStart = {
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY,
-              time: Date.now(),
-            };
+          if (e.touches.length > 1) {
+            isIframeMultiTouch = true;
+            iframeTouchStart = null;
+            return;
+          }
+          if (isInteractiveElement(e.target) || hasActiveSelection(doc)) {
+            iframeTouchStart = null;
+            return;
+          }
+          isIframeMultiTouch = false;
+          iframeTouchStart = {
+            x: e.touches[0].clientX,
+            y: e.touches[0].clientY,
+            time: Date.now(),
+          };
+        },
+        { passive: true, signal: abortController.signal }
+      );
+
+      doc.addEventListener(
+        'touchmove',
+        (e: TouchEvent) => {
+          if (e.touches.length > 1) {
+            isIframeMultiTouch = true;
+            iframeTouchStart = null;
           }
         },
-        { passive: true }
+        { passive: true, signal: abortController.signal }
       );
 
       doc.addEventListener(
         'touchend',
         (e: TouchEvent) => {
-          if (!iframeTouchStart) return;
-          const touch = e.changedTouches[0];
-          const deltaX = touch.clientX - iframeTouchStart.x;
-          const deltaY = touch.clientY - iframeTouchStart.y;
-          const elapsed = Date.now() - iframeTouchStart.time;
-          iframeTouchStart = null;
-
-          const selection = doc.getSelection();
-          if (selection && selection.toString().trim().length > 0) return;
-
-          // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
-          if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
-            if (deltaX < 0) {
-              rendition.next();
-            } else {
-              rendition.prev();
-            }
+          if (isIframeMultiTouch || !iframeTouchStart) {
+            isIframeMultiTouch = false;
+            iframeTouchStart = null;
             return;
           }
 
-          // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
-          if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
-            const width = doc.documentElement?.clientWidth || window.innerWidth;
-            const relativeX = touch.clientX / width;
-            if (relativeX < 0.2) {
-              rendition.prev();
-            } else if (relativeX > 0.8) {
-              rendition.next();
+          if (hasActiveSelection(doc) || isInteractiveElement(e.target)) {
+            iframeTouchStart = null;
+            return;
+          }
+
+          const touch = e.changedTouches[0];
+          const elapsed = Date.now() - iframeTouchStart.time;
+          const width = doc.documentElement?.clientWidth || window.innerWidth;
+          const start = iframeTouchStart;
+          iframeTouchStart = null;
+
+          const action = classifyTouchGesture(
+            start.x,
+            start.y,
+            touch.clientX,
+            touch.clientY,
+            elapsed,
+            width
+          );
+
+          if (action.type === 'swipe') {
+            if (action.direction === 'left') {
+              handleNextRef.current();
+            } else {
+              handlePrevRef.current();
+            }
+          } else if (action.type === 'tap') {
+            if (action.zone === 'left') {
+              handlePrevRef.current();
+            } else if (action.zone === 'right') {
+              handleNextRef.current();
             } else {
               setIsToolbarVisible((v) => !v);
             }
           }
         },
-        { passive: true }
+        { passive: true, signal: abortController.signal }
       );
     });
 
@@ -262,6 +355,7 @@ export function EpubReader({
 
     // Listen to page relocation
     rendition.on('relocated', (location: Location) => {
+      isTurningRef.current = false;
       if (!location || !location.start) return;
       const cfi = location.start.cfi;
       setCurrentCfi(cfi);
@@ -334,11 +428,29 @@ export function EpubReader({
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
+      // Abort all active content listeners across all views
+      activeControllers.forEach((ac) => {
+        try {
+          ac.abort();
+        } catch {
+          // Safe skip
+        }
+      });
+      activeControllers.clear();
+
       try {
         rendition.destroy();
         book.destroy();
       } catch {
         // Safe destroy fallback
+      }
+
+      // Avoid clearing a newer instance's refs from an older cleanup
+      if (renditionRef.current === rendition) {
+        renditionRef.current = null;
+      }
+      if (bookRef.current === book) {
+        bookRef.current = null;
       }
     };
   }, [bookData, initialCfi, syncProgressDebounced]);
@@ -358,61 +470,126 @@ export function EpubReader({
     }
   }, [theme]);
 
-  // Handle Font Size Change
+  // Handle Font Size Change with CFI position preservation and debounce
   useEffect(() => {
-    if (renditionRef.current) {
-      renditionRef.current.themes.fontSize(`${fontSize}px`);
+    if (!renditionRef.current) return;
+
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
     }
+
+    if (fontResizeTimerRef.current) {
+      clearTimeout(fontResizeTimerRef.current);
+      fontResizeTimerRef.current = null;
+    }
+    if (fontResizeRafRef.current !== null) {
+      cancelAnimationFrame(fontResizeRafRef.current);
+      fontResizeRafRef.current = null;
+    }
+
+    const currentRendition = renditionRef.current;
+
+    fontResizeTimerRef.current = setTimeout(() => {
+      fontResizeTimerRef.current = null;
+      if (!renditionRef.current || renditionRef.current !== currentRendition) return;
+
+      // 1. Capture current CFI position before reflow
+      const loc = currentRendition.currentLocation() as Location | undefined;
+      const targetCfi = loc?.start?.cfi || currentCfiRef.current;
+
+      // 2. Apply font size via supported epub.js themes API
+      currentRendition.themes.fontSize(`${fontSize}px`);
+
+      // 3. Re-anchor to the captured CFI to prevent pagination drift
+      if (targetCfi) {
+        fontResizeRafRef.current = requestAnimationFrame(() => {
+          fontResizeRafRef.current = null;
+          if (!renditionRef.current || renditionRef.current !== currentRendition) return;
+          currentRendition.display(targetCfi).catch((err) => {
+            console.warn('CFI re-anchor failed for target:', targetCfi, err);
+            // Do NOT call display() with no arguments (prevents resetting to Chapter 1)
+          });
+        });
+      }
+    }, 100);
+
+    return () => {
+      if (fontResizeTimerRef.current) {
+        clearTimeout(fontResizeTimerRef.current);
+        fontResizeTimerRef.current = null;
+      }
+      if (fontResizeRafRef.current !== null) {
+        cancelAnimationFrame(fontResizeRafRef.current);
+        fontResizeRafRef.current = null;
+      }
+    };
   }, [fontSize]);
 
-  // Page Navigation Handlers
-  const handlePrev = useCallback(() => {
-    renditionRef.current?.prev();
-  }, []);
-
-  const handleNext = useCallback(() => {
-    renditionRef.current?.next();
-  }, []);
-
-  // Mobile Touch & Gesture Handlers
+  // Mobile Touch & Gesture Handlers for Container
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-        time: Date.now(),
-      };
+    if (e.touches.length > 1) {
+      isMultiTouchRef.current = true;
+      touchStartRef.current = null;
+      return;
+    }
+    if (isInteractiveElement(e.target) || hasActiveSelection()) {
+      touchStartRef.current = null;
+      return;
+    }
+    isMultiTouchRef.current = false;
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      time: Date.now(),
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length > 1) {
+      isMultiTouchRef.current = true;
+      touchStartRef.current = null;
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
+    if (isMultiTouchRef.current || !touchStartRef.current) {
+      isMultiTouchRef.current = false;
+      touchStartRef.current = null;
+      return;
+    }
+
+    if (hasActiveSelection() || isInteractiveElement(e.target)) {
+      touchStartRef.current = null;
+      return;
+    }
+
     const touch = e.changedTouches[0];
-    const deltaX = touch.clientX - touchStartRef.current.x;
-    const deltaY = touch.clientY - touchStartRef.current.y;
     const elapsed = Date.now() - touchStartRef.current.time;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const start = touchStartRef.current;
     touchStartRef.current = null;
 
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0) return;
+    const action = classifyTouchGesture(
+      start.x,
+      start.y,
+      touch.clientX,
+      touch.clientY,
+      elapsed,
+      rect.width
+    );
 
-    // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
-    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
-      if (deltaX < 0) {
+    if (action.type === 'swipe') {
+      if (action.direction === 'left') {
         handleNext();
       } else {
         handlePrev();
       }
-      return;
-    }
-
-    // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
-    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
-      const rect = e.currentTarget.getBoundingClientRect();
+    } else if (action.type === 'tap') {
       const relativeX = (touch.clientX - rect.left) / rect.width;
-      if (relativeX < 0.2) {
+      if (relativeX <= 0.2) {
         handlePrev();
-      } else if (relativeX > 0.8) {
+      } else if (relativeX >= 0.8) {
         handleNext();
       } else {
         setIsToolbarVisible((v) => !v);
@@ -593,6 +770,7 @@ export function EpubReader({
       {/* Main Reading Canvas with Touch Zones & Swipe Detection */}
       <div
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className="relative flex-1 w-full h-full overflow-hidden"
       >

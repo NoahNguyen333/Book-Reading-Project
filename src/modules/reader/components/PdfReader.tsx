@@ -36,6 +36,13 @@ import {
   formatPageCfi,
   calculatePagePercentage,
 } from '../utils';
+import {
+  classifyTouchGesture,
+  hasActiveSelection,
+  isInteractiveElement,
+  isContainerZoomed,
+  isPannedToHorizontalBoundary,
+} from '../gestures';
 import { saveReadingProgressAction, addBookmarkAction, deleteBookmarkAction } from '../actions';
 
 interface PdfReaderProps {
@@ -99,8 +106,10 @@ export function PdfReader({
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [isToolbarVisible, setIsToolbarVisible] = useState(true);
 
-  // Touch gesture ref
+  // Touch gesture & navigation lock refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const isMultiTouchRef = useRef(false);
+  const isTurningRef = useRef(false);
 
   // Live incoming annotation sync (from reading room broadcast)
   useEffect(() => {
@@ -293,6 +302,7 @@ export function PdfReader({
         console.error('Failed to load PDF page:', err);
       } finally {
         setIsPageRendering(false);
+        isTurningRef.current = false;
       }
     },
     []
@@ -323,56 +333,108 @@ export function PdfReader({
     }
   }, [currentPage, zoom, isDocumentLoading, totalPages, renderPage, syncProgressDebounced]);
 
-  // Page Controls
+  // Page Controls with turning lock
   const handlePrev = useCallback(() => {
+    if (isTurningRef.current || isPageRendering) return;
+    isTurningRef.current = true;
     setCurrentPage((p) => Math.max(1, p - 1));
-  }, []);
+    setTimeout(() => {
+      isTurningRef.current = false;
+    }, 350);
+  }, [isPageRendering]);
 
   const handleNext = useCallback(() => {
+    if (isTurningRef.current || isPageRendering) return;
+    isTurningRef.current = true;
     setCurrentPage((p) => Math.min(totalPages, p + 1));
-  }, [totalPages]);
+    setTimeout(() => {
+      isTurningRef.current = false;
+    }, 350);
+  }, [totalPages, isPageRendering]);
 
   // Mobile Touch & Gesture Handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-        time: Date.now(),
-      };
+    if (e.touches.length > 1) {
+      isMultiTouchRef.current = true;
+      touchStartRef.current = null;
+      return;
+    }
+    if (isDocumentLoading || isPageRendering || isInteractiveElement(e.target) || hasActiveSelection()) {
+      touchStartRef.current = null;
+      return;
+    }
+    isMultiTouchRef.current = false;
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      time: Date.now(),
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length > 1) {
+      isMultiTouchRef.current = true;
+      touchStartRef.current = null;
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
-    const touch = e.changedTouches[0];
-    const deltaX = touch.clientX - touchStartRef.current.x;
-    const deltaY = touch.clientY - touchStartRef.current.y;
-    const elapsed = Date.now() - touchStartRef.current.time;
-    touchStartRef.current = null;
-
-    const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0) return;
-
-    // Horizontal swipe gesture (> 50px, vertical drift < 60px within 500ms)
-    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 60 && elapsed < 500) {
-      if (deltaX < 0) {
-        handleNext();
-      } else {
-        handlePrev();
-      }
+    if (isMultiTouchRef.current || !touchStartRef.current) {
+      isMultiTouchRef.current = false;
+      touchStartRef.current = null;
       return;
     }
 
-    // Tap zones: left 20% = prev, right 20% = next, center 60% = toggle toolbar
-    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10 && elapsed < 400) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const relativeX = (touch.clientX - rect.left) / rect.width;
-      if (relativeX < 0.2) {
-        handlePrev();
-      } else if (relativeX > 0.8) {
+    if (isDocumentLoading || isPageRendering || hasActiveSelection() || isInteractiveElement(e.target)) {
+      touchStartRef.current = null;
+      return;
+    }
+
+    const container = containerRef.current;
+    const isZoomed = isContainerZoomed(container, 30);
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+
+    // When zoomed in and scrolling horizontally, let user pan without turning pages
+    if (isZoomed) {
+      if (deltaX < 0 && !isPannedToHorizontalBoundary(container, 'left', 30)) {
+        touchStartRef.current = null;
+        return;
+      }
+      if (deltaX > 0 && !isPannedToHorizontalBoundary(container, 'right', 30)) {
+        touchStartRef.current = null;
+        return;
+      }
+    }
+
+    const elapsed = Date.now() - touchStartRef.current.time;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+
+    const action = classifyTouchGesture(
+      start.x,
+      start.y,
+      touch.clientX,
+      touch.clientY,
+      elapsed,
+      rect.width
+    );
+
+    if (action.type === 'swipe') {
+      if (action.direction === 'left' && currentPage < totalPages) {
         handleNext();
-      } else {
+      } else if (action.direction === 'right' && currentPage > 1) {
+        handlePrev();
+      }
+    } else if (action.type === 'tap') {
+      const relativeX = (touch.clientX - rect.left) / rect.width;
+      // Edge taps are disabled when zoomed to prevent accidental page turns while inspecting content
+      if (!isZoomed && relativeX <= 0.20 && currentPage > 1) {
+        handlePrev();
+      } else if (!isZoomed && relativeX >= 0.80 && currentPage < totalPages) {
+        handleNext();
+      } else if (relativeX > 0.20 && relativeX < 0.80) {
         setIsToolbarVisible((v) => !v);
       }
     }
@@ -656,6 +718,7 @@ export function PdfReader({
         ref={containerRef}
         onMouseUp={handleMouseUp}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4 min-h-[80vh]"
       >

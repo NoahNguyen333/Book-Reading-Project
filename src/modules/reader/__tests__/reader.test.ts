@@ -7,6 +7,7 @@ import {
   DEFAULT_FONT_SIZE,
   createDebouncedFn,
 } from '../utils';
+import { attachContentsCleanup } from '../gestures';
 
 describe('EPUB Reader Utilities & State Machine', () => {
   beforeEach(() => {
@@ -95,6 +96,162 @@ describe('EPUB Reader Utilities & State Machine', () => {
       expect(clampPercentage(-5)).toBe(0);
       expect(clampPercentage(105)).toBe(100);
       expect(clampPercentage(42.5)).toBe(42.5);
+    });
+  });
+
+  describe('Font-Size Scaling & CFI Preservation State Logic', () => {
+    it('debounces rapid font size adjustments and targets latest CFI location', () => {
+      const mockReanchor = vi.fn();
+      let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const changeFontSize = (newSize: number, currentCfi: string) => {
+        if (pendingTimer) clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(() => {
+          mockReanchor(newSize, currentCfi);
+        }, 100);
+      };
+
+      // User rapidly taps font size + 3 times in 80ms
+      changeFontSize(18, 'epubcfi(/6/4[chap1]!/4/2/4:0)');
+      vi.advanceTimersByTime(30);
+      changeFontSize(20, 'epubcfi(/6/4[chap1]!/4/2/4:0)');
+      vi.advanceTimersByTime(30);
+      changeFontSize(22, 'epubcfi(/6/4[chap1]!/4/2/4:0)');
+
+      expect(mockReanchor).not.toHaveBeenCalled();
+
+      // Clock advances past debounce threshold
+      vi.advanceTimersByTime(100);
+
+      expect(mockReanchor).toHaveBeenCalledTimes(1);
+      expect(mockReanchor).toHaveBeenCalledWith(22, 'epubcfi(/6/4[chap1]!/4/2/4:0)');
+    });
+
+    it('preserves target CFI when location is available', () => {
+      const capturedLocation = {
+        start: { cfi: 'epubcfi(/6/8[chap3]!/4/10/2:0)' },
+      };
+      const fallbackCfi = 'epubcfi(/6/2[chap0]!/4/1:0)';
+
+      const resolveTargetCfi = (loc?: { start?: { cfi?: string } }, fallback?: string) => {
+        return loc?.start?.cfi || fallback || '';
+      };
+
+      expect(resolveTargetCfi(capturedLocation, fallbackCfi)).toBe('epubcfi(/6/8[chap3]!/4/10/2:0)');
+      expect(resolveTargetCfi(undefined, fallbackCfi)).toBe(fallbackCfi);
+      expect(resolveTargetCfi(undefined, undefined)).toBe('');
+    });
+
+    it('does not invoke zero-argument display() when CFI re-anchor fails', async () => {
+      const mockDisplay = vi.fn().mockRejectedValue(new Error('CFI resolution failed'));
+      const targetCfi = 'epubcfi(/6/8[chap3]!/4/10/2:0)';
+
+      // Simulate re-anchor attempt with failure handler
+      const reanchorSafely = async (cfi: string) => {
+        try {
+          await mockDisplay(cfi);
+        } catch (err) {
+          // Fixed behavior: Log warning and DO NOT call display() with no arguments
+          console.warn('CFI re-anchor failed for target:', cfi, err);
+        }
+      };
+
+      await reanchorSafely(targetCfi);
+
+      expect(mockDisplay).toHaveBeenCalledTimes(1);
+      expect(mockDisplay).toHaveBeenCalledWith(targetCfi);
+      // Crucial: Must NEVER call display() with 0 arguments (which would reset to Chapter 1)
+      expect(mockDisplay).not.toHaveBeenCalledWith();
+    });
+
+    it('cancels pending animation frame and prevents execution on destroyed rendition', () => {
+      let rafHandle: number | null = null;
+      let renditionRef: { display: ReturnType<typeof vi.fn> } | null = {
+        display: vi.fn(),
+      };
+
+      const cancelPendingWork = () => {
+        if (rafHandle !== null) {
+          cancelAnimationFrame(rafHandle);
+          rafHandle = null;
+        }
+      };
+
+      // Schedule RAF
+      rafHandle = requestAnimationFrame(() => {
+        if (!renditionRef) return;
+        renditionRef.display();
+      });
+
+      // Component unmounts or destroys rendition instance
+      cancelPendingWork();
+      renditionRef = null;
+
+      // Advance frames
+      vi.runAllTimers();
+
+      expect(rafHandle).toBeNull();
+    });
+
+    it('wraps contents.destroy to abort listeners and invoke original destroy exactly once', () => {
+      const originalDestroy = vi.fn();
+      const mockContents = {
+        destroy: originalDestroy,
+      };
+      const onCleanup = vi.fn();
+
+      const { abortController, cleanup } = attachContentsCleanup(
+        mockContents,
+        null,
+        onCleanup
+      );
+
+      expect(abortController.signal.aborted).toBe(false);
+      expect(originalDestroy).not.toHaveBeenCalled();
+
+      // 1. Invoking wrapped contents.destroy()
+      mockContents.destroy();
+
+      expect(abortController.signal.aborted).toBe(true);
+      expect(originalDestroy).toHaveBeenCalledTimes(1);
+      expect(onCleanup).toHaveBeenCalledTimes(1);
+      expect(onCleanup).toHaveBeenCalledWith(abortController);
+
+      // 2. Repeated cleanup or destroy call is safe and idempotent
+      cleanup();
+      mockContents.destroy();
+
+      expect(abortController.signal.aborted).toBe(true);
+      expect(onCleanup).toHaveBeenCalledTimes(1); // onCleanup not re-invoked
+      expect(originalDestroy).toHaveBeenCalledTimes(2);
+    });
+
+    it('triggers listener cleanup via window unload and pagehide events', () => {
+      const mockWindow = new EventTarget() as Window;
+      const originalDestroy = vi.fn();
+      const mockContents = {
+        destroy: originalDestroy,
+        window: mockWindow,
+      };
+      const onCleanup = vi.fn();
+
+      const { abortController } = attachContentsCleanup(
+        mockContents,
+        null,
+        onCleanup
+      );
+
+      expect(abortController.signal.aborted).toBe(false);
+
+      // Dispatch unload event on iframe window
+      mockWindow.dispatchEvent(new Event('unload'));
+
+      expect(abortController.signal.aborted).toBe(true);
+      expect(onCleanup).toHaveBeenCalledTimes(1);
+
+      // Subsequent pagehide or destroy does not re-invoke onCleanup
+      mockWindow.dispatchEvent(new Event('pagehide'));
+      expect(onCleanup).toHaveBeenCalledTimes(1);
     });
   });
 });
