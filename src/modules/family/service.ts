@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { Book } from '@/modules/library/types';
+import { verifyBookAccess } from '@/modules/reader/access';
 import {
   Family,
   FamilyMember,
@@ -268,9 +269,52 @@ export async function joinFamily(userId: string, familyCode: string): Promise<Fa
 
 /**
  * User leaves a family space.
+ * Enforces the last-admin invariant: a sole admin cannot abandon a family if other members remain.
+ * If the sole member leaves, cleans up the orphaned family record.
  */
 export async function leaveFamily(userId: string, familyId: string): Promise<void> {
   const admin = createAdminClient();
+
+  // 1. Fetch current member record
+  const { data: member } = await admin
+    .from('family_members')
+    .select('role')
+    .eq('family_id', familyId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!member) {
+    return;
+  }
+
+  // 2. If user is an admin, check family composition
+  if (member.role === 'admin') {
+    const { data: members } = await admin
+      .from('family_members')
+      .select('user_id, role')
+      .eq('family_id', familyId);
+
+    const allMembers = members || [];
+    const adminCount = allMembers.filter((m) => m.role === 'admin').length;
+
+    if (adminCount <= 1 && allMembers.length > 1) {
+      throw new Error(
+        'Bạn là Quản trị viên duy nhất. Vui lòng chỉ định Quản trị viên khác trước khi rời gia đình.'
+      );
+    }
+
+    // If the sole member leaves, remove membership and clean up family
+    if (allMembers.length <= 1) {
+      await admin
+        .from('family_members')
+        .delete()
+        .eq('family_id', familyId)
+        .eq('user_id', userId);
+
+      await admin.from('families').delete().eq('id', familyId);
+      return;
+    }
+  }
 
   const { error } = await admin
     .from('family_members')
@@ -285,6 +329,7 @@ export async function leaveFamily(userId: string, familyId: string): Promise<voi
 
 /**
  * Family Admin updates member role (e.g. promoting reader to moderator or vice versa).
+ * Enforces the last-admin invariant: cannot demote the sole admin in the family.
  */
 export async function updateMemberRole(
   familyId: string,
@@ -292,6 +337,33 @@ export async function updateMemberRole(
   newRole: FamilyRole
 ): Promise<void> {
   const admin = createAdminClient();
+
+  // 1. Verify target membership
+  const { data: targetMember } = await admin
+    .from('family_members')
+    .select('role')
+    .eq('family_id', familyId)
+    .eq('user_id', targetUserId)
+    .maybeSingle();
+
+  if (!targetMember) {
+    throw new Error('Thành viên không tồn tại trong gia đình.');
+  }
+
+  // 2. Prevent demoting the only remaining admin
+  if (targetMember.role === 'admin' && newRole !== 'admin') {
+    const { data: adminRows } = await admin
+      .from('family_members')
+      .select('user_id')
+      .eq('family_id', familyId)
+      .eq('role', 'admin');
+
+    if (adminRows && adminRows.length <= 1) {
+      throw new Error(
+        'Không thể hạ quyền Quản trị viên duy nhất của gia đình. Gia đình phải có ít nhất một Quản trị viên.'
+      );
+    }
+  }
 
   const { error } = await admin
     .from('family_members')
@@ -306,12 +378,40 @@ export async function updateMemberRole(
 
 /**
  * Family Admin removes a member from the family space.
+ * Enforces the last-admin invariant: cannot remove the sole admin in the family.
  */
 export async function removeFamilyMember(
   familyId: string,
   targetUserId: string
 ): Promise<void> {
   const admin = createAdminClient();
+
+  // 1. Verify target membership
+  const { data: targetMember } = await admin
+    .from('family_members')
+    .select('role')
+    .eq('family_id', familyId)
+    .eq('user_id', targetUserId)
+    .maybeSingle();
+
+  if (!targetMember) {
+    throw new Error('Thành viên không tồn tại trong gia đình.');
+  }
+
+  // 2. Prevent removing the only remaining admin
+  if (targetMember.role === 'admin') {
+    const { data: adminRows } = await admin
+      .from('family_members')
+      .select('user_id')
+      .eq('family_id', familyId)
+      .eq('role', 'admin');
+
+    if (adminRows && adminRows.length <= 1) {
+      throw new Error(
+        'Không thể xóa Quản trị viên duy nhất của gia đình. Vui lòng chỉ định Quản trị viên mới trước khi xóa.'
+      );
+    }
+  }
 
   const { error } = await admin
     .from('family_members')
@@ -326,13 +426,40 @@ export async function removeFamilyMember(
 
 /**
  * Adds an existing book from the central catalog to the Family Bookshelf.
+ * Enforces member curation permissions and verified sharing entitlements.
  */
 export async function addBookToFamilyBookshelf(
   familyId: string,
   bookId: string,
-  addedBy: string
+  addedBy: string,
+  userEmail?: string | null
 ): Promise<void> {
   const admin = createAdminClient();
+
+  // 1. Verify that addedBy is an active family member with admin or moderator role
+  const { data: member } = await admin
+    .from('family_members')
+    .select('role')
+    .eq('family_id', familyId)
+    .eq('user_id', addedBy)
+    .maybeSingle();
+
+  if (!member || !['admin', 'moderator'].includes(member.role)) {
+    throw new Error('Chỉ Quản trị viên (Admin) hoặc Điều hành viên (Moderator) mới có quyền thêm sách vào tủ sách gia đình.');
+  }
+
+  // 2. Verify book access and shareability.
+  // In accordance with product rules, only explicitly published books can be added to a family bookshelf.
+  const bookAccess = await verifyBookAccess(addedBy, userEmail, bookId);
+  if (!bookAccess.authorized || !bookAccess.book) {
+    throw new Error('Bạn không có quyền truy cập cuốn sách này.');
+  }
+
+  if (!bookAccess.canShare || !bookAccess.book.isPublic) {
+    throw new Error(
+      'Chỉ sách đã xuất bản (công khai) mới có thể được thêm vào tủ sách gia đình. Sách riêng tư hoặc chưa xuất bản không được phép chia sẻ.'
+    );
+  }
 
   const { error } = await admin
     .from('family_books')

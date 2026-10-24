@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, findTenantRole } from '@/modules/tenant';
 import { canManageRoom, canReadBooks } from '@/modules/entitlements';
+import { verifyBookAccess } from '@/modules/reader/access';
+import { isValidUuid, isValidMeetingUrl } from '@/lib/validation';
 import { createRoom, updateRoom, updateRoomSyncState } from './service';
 import { ReadingRoom, UpdateRoomInput } from './types';
 
@@ -29,20 +31,45 @@ export async function createRoomAction(
       return { error: 'Authentication required to create reading rooms.' };
     }
 
+    const cleanTenantId = tenantId?.trim();
+    if (!cleanTenantId || !isValidUuid(cleanTenantId)) {
+      return { error: 'Missing or invalid tenant identifier.' };
+    }
+
     const memberships = await getUserTenants(user.id);
-    const role = findTenantRole(memberships, tenantId);
+    const role = findTenantRole(memberships, cleanTenantId);
     if (!canManageRoom(role)) {
       return { error: 'Access denied: Only tenant admins can create reading rooms.' };
     }
 
-    if (!title || !title.trim()) {
-      return { error: 'Room title is required.' };
+    const cleanTitle = title?.trim();
+    if (!cleanTitle || cleanTitle.length > 100) {
+      return { error: 'Room title must be between 1 and 100 characters.' };
     }
 
-    const room = await createRoom(tenantId, {
-      title: title.trim(),
-      activeBookId: activeBookId || null,
-      meetingUrl: meetingUrl?.trim() || null,
+    // Validate meeting URL if provided
+    let cleanMeetingUrl: string | null = null;
+    if (meetingUrl && meetingUrl.trim()) {
+      cleanMeetingUrl = meetingUrl.trim();
+      if (!isValidMeetingUrl(cleanMeetingUrl)) {
+        return { error: 'Invalid meeting URL: must be a valid HTTPS URL.' };
+      }
+    }
+
+    // Validate active book access if provided
+    let cleanBookId: string | null = null;
+    if (activeBookId && activeBookId.trim()) {
+      cleanBookId = activeBookId.trim();
+      const bookAccess = await verifyBookAccess(user.id, user.email, cleanBookId);
+      if (!bookAccess.authorized || !bookAccess.book) {
+        return { error: 'Access denied to the selected book.' };
+      }
+    }
+
+    const room = await createRoom(cleanTenantId, {
+      title: cleanTitle,
+      activeBookId: cleanBookId,
+      meetingUrl: cleanMeetingUrl,
     });
 
     revalidatePath('/room');
@@ -70,16 +97,47 @@ export async function updateRoomAction(
       return { error: 'Authentication required.' };
     }
 
+    const cleanTenantId = tenantId?.trim();
+    const cleanRoomId = roomId?.trim();
+    if (!cleanTenantId || !cleanRoomId || !isValidUuid(cleanTenantId) || !isValidUuid(cleanRoomId)) {
+      return { error: 'Missing or invalid identifiers.' };
+    }
+
     const memberships = await getUserTenants(user.id);
-    const role = findTenantRole(memberships, tenantId);
+    const role = findTenantRole(memberships, cleanTenantId);
     if (!canManageRoom(role)) {
       return { error: 'Access denied: Only tenant admins can configure reading rooms.' };
     }
 
-    const updated = await updateRoom(roomId, tenantId, updates);
+    // Validate updates
+    if (updates.title !== undefined) {
+      const cleanTitle = updates.title.trim();
+      if (!cleanTitle || cleanTitle.length > 100) {
+        return { error: 'Room title must be between 1 and 100 characters.' };
+      }
+    }
+
+    if (updates.meetingUrl !== undefined && updates.meetingUrl !== null) {
+      const cleanUrl = updates.meetingUrl.trim();
+      if (cleanUrl.length > 0 && !isValidMeetingUrl(cleanUrl)) {
+        return { error: 'Invalid meeting URL: must be a valid HTTPS URL.' };
+      }
+    }
+
+    if (updates.activeBookId !== undefined && updates.activeBookId !== null) {
+      const cleanBookId = updates.activeBookId.trim();
+      if (cleanBookId.length > 0) {
+        const bookAccess = await verifyBookAccess(user.id, user.email, cleanBookId);
+        if (!bookAccess.authorized || !bookAccess.book) {
+          return { error: 'Access denied to the selected book.' };
+        }
+      }
+    }
+
+    const updated = await updateRoom(cleanRoomId, cleanTenantId, updates);
 
     revalidatePath('/room');
-    revalidatePath(`/room/${roomId}`);
+    revalidatePath(`/room/${cleanRoomId}`);
     revalidatePath('/dashboard');
     return { success: true, data: updated };
   } catch (err) {
@@ -105,17 +163,33 @@ export async function updateRoomSyncStateAction(
       return { error: 'Authentication required.' };
     }
 
+    const cleanTenantId = tenantId?.trim();
+    const cleanRoomId = roomId?.trim();
+    if (!cleanTenantId || !cleanRoomId || !isValidUuid(cleanTenantId) || !isValidUuid(cleanRoomId)) {
+      return { error: 'Missing or invalid identifiers.' };
+    }
+
     const memberships = await getUserTenants(user.id);
-    const role = findTenantRole(memberships, tenantId);
+    const role = findTenantRole(memberships, cleanTenantId);
     if (!canReadBooks(role)) {
       return { error: 'Access denied: Not a member of this reading space.' };
     }
 
-    await updateRoomSyncState(roomId, tenantId, {
+    const cleanLocation = location?.trim();
+    if (!cleanLocation || cleanLocation.length > 500) {
+      return { error: 'Invalid location identifier.' };
+    }
+
+    const validPercentage =
+      typeof percentage === 'number' && !isNaN(percentage)
+        ? Math.min(100, Math.max(0, percentage))
+        : 0;
+
+    await updateRoomSyncState(cleanRoomId, cleanTenantId, {
       hostUserId: user.id,
       hostName: user.fullName || user.email?.split('@')[0] || 'Host',
-      location,
-      percentage: Math.min(100, Math.max(0, percentage)),
+      location: cleanLocation,
+      percentage: validPercentage,
       updatedAt: new Date().toISOString(),
     });
 

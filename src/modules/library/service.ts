@@ -84,6 +84,8 @@ export async function getUserActiveReadingList(
 
 /**
  * Retrieves all books from the central public catalog, ordered from newest to oldest.
+ * Strictly filters to books explicitly flagged as public (is_public = true) across
+ * all query attempts, including fallback queries.
  */
 export async function getAllPublicBooks(): Promise<Book[]> {
   const supabase = await createClient();
@@ -91,6 +93,7 @@ export async function getAllPublicBooks(): Promise<Book[]> {
   const { data, error } = await supabase
     .from('books')
     .select('*')
+    .eq('is_public', true)
     .order('created_at', { ascending: false });
 
   if (error || !data) {
@@ -98,6 +101,7 @@ export async function getAllPublicBooks(): Promise<Book[]> {
     const { data: adminData } = await admin
       .from('books')
       .select('*')
+      .eq('is_public', true)
       .order('created_at', { ascending: false });
 
     if (!adminData) return [];
@@ -109,6 +113,7 @@ export async function getAllPublicBooks(): Promise<Book[]> {
 
 /**
  * Retrieves all books for a specific tenant, ordered from newest to oldest.
+ * Relies on caller's tenant membership via RLS; fails closed if unauthorized.
  */
 export async function getTenantBooks(tenantId: string): Promise<Book[]> {
   const supabase = await createClient();
@@ -120,19 +125,7 @@ export async function getTenantBooks(tenantId: string): Promise<Book[]> {
     .order('created_at', { ascending: false });
 
   if (error || !data) {
-    // Fallback to admin client if session is still hydrating or during SSR
-    const admin = createAdminClient();
-    const { data: adminData, error: adminError } = await admin
-      .from('books')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false });
-
-    if (adminError || !adminData) {
-      return [];
-    }
-
-    return adminData.map(mapDbBookToDomain);
+    return [];
   }
 
   return data.map(mapDbBookToDomain);
@@ -153,6 +146,7 @@ export async function insertBook(
     fileSize: number;
     format?: string;
     processingStatus?: string;
+    isPublic?: boolean;
   }
 ): Promise<Book> {
   const supabase = await createClient();
@@ -168,6 +162,7 @@ export async function insertBook(
     file_size: bookData.fileSize,
     format: bookData.format || 'epub',
     processing_status: bookData.processingStatus || 'ready',
+    is_public: bookData.isPublic !== undefined ? bookData.isPublic : false,
   };
 
   const { data, error } = await supabase

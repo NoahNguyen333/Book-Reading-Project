@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/modules/auth';
 import { getUserTenants, findTenantRole } from '@/modules/tenant';
 import { canReadBooks, canUploadBooks } from '@/modules/entitlements';
+import { verifyBookAccess } from '@/modules/reader/access';
 import {
   createAnnotation,
   deleteAnnotation,
@@ -28,18 +29,43 @@ export async function createAnnotationAction(
       return { error: 'Authentication required to create annotations.' };
     }
 
-    const memberships = await getUserTenants(user.id);
-    const role = findTenantRole(memberships, input.tenantId);
-    if (!canReadBooks(role)) {
-      return { error: 'Access denied: You are not a member of this reading space.' };
+    if (!input.bookId || typeof input.bookId !== 'string') {
+      return { error: 'Missing book identifier.' };
     }
 
-    if (!input.highlightedText || !input.highlightedText.trim()) {
+    // Verify user has legitimate access to read this book
+    const access = await verifyBookAccess(user.id, user.email, input.bookId);
+    if (!access.authorized || !access.book) {
+      return { error: access.error || 'Access denied: You do not have permission to annotate this book.' };
+    }
+
+    const cleanHighlight = input.highlightedText?.trim();
+    if (!cleanHighlight) {
       return { error: 'Highlighted text is required.' };
     }
+    if (cleanHighlight.length > 5000) {
+      return { error: 'Highlighted text exceeds maximum allowed length (5000 characters).' };
+    }
+
+    const cleanLocation = input.location?.trim();
+    if (!cleanLocation || cleanLocation.length > 500) {
+      return { error: 'Invalid location identifier.' };
+    }
+
+    const cleanNote = input.note?.trim() ? input.note.trim().slice(0, 2000) : null;
+    const allowedColors = ['yellow', 'green', 'pink', 'blue'] as const;
+    const color = input.color && allowedColors.includes(input.color) ? input.color : 'yellow';
+
+    // Use verified book tenantId to prevent tenant mismatch
+    const tenantId = access.book.tenantId;
 
     const created = await createAnnotation({
       ...input,
+      tenantId,
+      location: cleanLocation,
+      highlightedText: cleanHighlight,
+      note: cleanNote,
+      color,
       userId: user.id,
     });
 
@@ -127,10 +153,15 @@ export async function createCommentAction(
       return { error: 'Access denied: You are not a member of this reading space.' };
     }
 
+    const cleanContent = content?.trim();
+    if (!cleanContent || cleanContent.length > 2000) {
+      return { error: 'Comment must be between 1 and 2,000 characters.' };
+    }
+
     const created = await createComment({
       annotationId,
       tenantId,
-      content,
+      content: cleanContent,
       userId: user.id,
       userName: user.fullName || user.email?.split('@')[0],
       userEmail: user.email,

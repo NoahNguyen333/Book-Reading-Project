@@ -1,86 +1,74 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { ReadingProgress, Bookmark } from './types';
 import { Book } from '@/modules/library/types';
+import { verifyBookAccess } from './access';
 
 /**
- * Retrieves book details by ID, supporting cross-tenant public catalog reading.
- * Queries strictly by bookId, returning the record and its storage tenant_id.
+ * Retrieves book details by ID, enforcing strict caller authorization.
+ * Unpublished books are never returned to unauthorized or unauthenticated callers.
  */
 export async function getBookDetails(
   bookId: string,
   tenantId?: string
 ): Promise<Book | null> {
+  const cleanBookId = bookId?.trim();
+  if (!cleanBookId) return null;
+
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  let query = supabase.from('books').select('*').eq('id', bookId);
-  if (tenantId) {
-    query = query.eq('tenant_id', tenantId);
-  }
-
-  const { data, error } = await query.single();
-
-  if (error || !data) {
-    // Fallback to admin client to resolve book across tenants
-    const admin = createAdminClient();
-    let adminQuery = admin.from('books').select('*').eq('id', bookId);
-    if (tenantId) {
-      adminQuery = adminQuery.eq('tenant_id', tenantId);
+  if (user) {
+    const access = await verifyBookAccess(user.id, user.email, cleanBookId);
+    if (!access.authorized || !access.book) {
+      return null;
     }
-    const { data: adminData, error: adminError } = await adminQuery.single();
 
-    if (adminError || !adminData) {
-      // If tenantId was specified and failed, fallback to querying strictly by id
-      if (tenantId) {
-        const { data: fallbackData } = await admin.from('books').select('*').eq('id', bookId).single();
-        if (fallbackData) {
-          return {
-            id: fallbackData.id,
-            tenantId: fallbackData.tenant_id,
-            title: fallbackData.title,
-            author: fallbackData.author,
-            description: fallbackData.description,
-            coverUrl: fallbackData.cover_url,
-            storagePath: fallbackData.storage_path,
-            fileSize: fallbackData.file_size,
-            format: fallbackData.format,
-            processingStatus: fallbackData.processing_status,
-            createdAt: fallbackData.created_at,
-            updatedAt: fallbackData.updated_at,
-          };
-        }
-      }
+    if (tenantId && access.book.tenantId !== tenantId) {
       return null;
     }
 
     return {
-      id: adminData.id,
-      tenantId: adminData.tenant_id,
-      title: adminData.title,
-      author: adminData.author,
-      description: adminData.description,
-      coverUrl: adminData.cover_url,
-      storagePath: adminData.storage_path,
-      fileSize: adminData.file_size,
-      format: adminData.format,
-      processingStatus: adminData.processing_status,
-      createdAt: adminData.created_at,
-      updatedAt: adminData.updated_at,
+      id: access.book.id,
+      tenantId: access.book.tenantId,
+      title: access.book.title,
+      author: access.book.author,
+      description: access.book.description || null,
+      coverUrl: access.book.coverUrl,
+      storagePath: access.book.storagePath,
+      fileSize: access.book.fileSize || null,
+      format: access.book.format || 'epub',
+      processingStatus: access.book.processingStatus || 'ready',
+      createdAt: access.book.createdAt || new Date().toISOString(),
+      updatedAt: access.book.updatedAt || new Date().toISOString(),
     };
   }
 
+  // Unauthenticated caller: strictly restricted to explicitly public catalog books
+  const { data: publicBook } = await supabase
+    .from('books')
+    .select('*')
+    .eq('id', cleanBookId)
+    .eq('is_public', true)
+    .maybeSingle();
+
+  if (!publicBook) return null;
+  if (tenantId && publicBook.tenant_id !== tenantId) return null;
+
   return {
-    id: data.id,
-    tenantId: data.tenant_id,
-    title: data.title,
-    author: data.author,
-    description: data.description,
-    coverUrl: data.cover_url,
-    storagePath: data.storage_path,
-    fileSize: data.file_size,
-    format: data.format,
-    processingStatus: data.processing_status,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    id: publicBook.id,
+    tenantId: publicBook.tenant_id,
+    title: publicBook.title,
+    author: publicBook.author,
+    description: publicBook.description,
+    coverUrl: publicBook.cover_url,
+    storagePath: publicBook.storage_path,
+    fileSize: publicBook.file_size,
+    format: publicBook.format,
+    processingStatus: publicBook.processing_status,
+    createdAt: publicBook.created_at,
+    updatedAt: publicBook.updated_at,
   };
 }
 

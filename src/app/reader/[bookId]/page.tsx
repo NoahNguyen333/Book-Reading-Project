@@ -1,10 +1,11 @@
 import { redirect, notFound } from 'next/navigation';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { getCurrentUser } from '@/modules/auth';
+import { getCurrentUser, isPlatformSuperAdmin } from '@/modules/auth';
 import { getUserTenants, resolveActiveMembership, ACTIVE_TENANT_COOKIE } from '@/modules/tenant';
 import { canUploadBooks } from '@/modules/entitlements';
-import { getBookDetails, getUserReadingProgress, getBookmarks } from '@/modules/reader/service';
+import { verifyBookAccess } from '@/modules/reader/access';
+import { getUserReadingProgress, getBookmarks } from '@/modules/reader/service';
 import { getBookAnnotations } from '@/modules/reader/annotations/service';
 import { ReaderContainer } from '@/modules/reader/components';
 import { ArrowLeft, BookOpen } from 'lucide-react';
@@ -37,12 +38,13 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
     redirect(`/login?redirectTo=/reader/${bookId}`);
   }
 
-  // 1. Fetch book details strictly by bookId (supports cross-tenant reading)
-  const book = await getBookDetails(bookId);
-
-  if (!book) {
+  // 1. Authorize book access strictly on server
+  const access = await verifyBookAccess(user.id, user.email, bookId);
+  if (!access.authorized || !access.book) {
     notFound();
   }
+
+  const book = access.book;
 
   // 2. Resolve user's space context (optional for solo reading)
   const cookieStore = await cookies();
@@ -52,8 +54,7 @@ export default async function ReaderPage({ params, searchParams }: ReaderPagePro
   const activeMembership = resolveActiveMembership(memberships, activeTenantCookie);
   const tenantName = activeMembership?.tenant.name || 'Solo Reading';
 
-  const superAdminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
-  const isSuperAdmin = Boolean(user.email && superAdminEmail && user.email.trim().toLowerCase() === superAdminEmail);
+  const isSuperAdmin = await isPlatformSuperAdmin(user.email);
   const isAdmin = isSuperAdmin || (activeMembership ? canUploadBooks(activeMembership.role) : false);
 
   // 3. Hydrate reading progress, bookmarks, and annotations in parallel without cross-tenant block

@@ -122,10 +122,14 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
 /**
  * Checks if a given email is the designated Platform Super Admin.
+ * Checks server-only SUPER_ADMIN_EMAIL first, falling back to NEXT_PUBLIC_SUPER_ADMIN_EMAIL.
  */
 export async function isPlatformSuperAdmin(email?: string | null): Promise<boolean> {
   if (!email) return false;
-  const adminEmail = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  const adminEmail = (
+    process.env.SUPER_ADMIN_EMAIL ||
+    process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL
+  )?.trim().toLowerCase();
   if (!adminEmail) return false;
   return email.trim().toLowerCase() === adminEmail;
 }
@@ -145,6 +149,10 @@ export async function updateUserProfileNameAction(
     const trimmed = fullName?.trim();
     if (!trimmed) {
       return { error: 'Tên không được để trống.' };
+    }
+
+    if (trimmed.length > 100) {
+      return { error: 'Tên không được vượt quá 100 ký tự.' };
     }
 
     const supabase = await createClient();

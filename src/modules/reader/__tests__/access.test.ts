@@ -79,6 +79,8 @@ describe('verifyBookAccess Security Domain Service', () => {
 
     const res = await verifyBookAccess('superadmin-id', 'admin@readingroom.internal', 'private-book-1');
     expect(res.authorized).toBe(true);
+    expect(res.accessSource).toBe('super_admin');
+    expect(res.canShare).toBe(false); // Unpublished books cannot be shared to family bookshelves
     expect(res.book?.id).toBe('private-book-1');
     expect(res.book?.tenantId).toBe('tenant-corporate');
   });
@@ -107,11 +109,68 @@ describe('verifyBookAccess Security Domain Service', () => {
 
     const res = await verifyBookAccess('regular-reader-id', 'reader@family.com', 'public-book-1');
     expect(res.authorized).toBe(true);
+    expect(res.accessSource).toBe('public');
+    expect(res.canShare).toBe(true);
     expect(res.book?.id).toBe('public-book-1');
     expect(res.book?.isPublic).toBe(true);
   });
 
-  it('grants access if book is private but user is a member of the owning tenant', async () => {
+  it('grants access and canShare: true if book is private and user is an ADMIN in the owning tenant', async () => {
+    vi.spyOn(authModule, 'isPlatformSuperAdmin').mockResolvedValue(false);
+
+    mockAdminClient.from.mockImplementation((table: string) => {
+      if (table === 'books') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: 'tenant-book-1',
+                  tenant_id: 'tenant-alpha',
+                  is_public: false,
+                  cover_url: 'tenant-alpha/tenant-book-1-cover.jpg',
+                  storage_path: 'tenant-alpha/tenant-book-1.epub',
+                  title: 'Alpha Private Journal',
+                  author: 'Alpha Team',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'tenant_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { role: 'admin' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'family_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    const res = await verifyBookAccess('admin-user-id', 'admin@alpha.com', 'tenant-book-1');
+    expect(res.authorized).toBe(true);
+    expect(res.accessSource).toBe('tenant');
+    expect(res.canShare).toBe(false); // Unpublished books cannot be shared to family bookshelves even by tenant admins
+    expect(res.book?.id).toBe('tenant-book-1');
+  });
+
+  it('strictly denies reading access if book is unpublished and user is only a READER in the owning tenant', async () => {
     vi.spyOn(authModule, 'isPlatformSuperAdmin').mockResolvedValue(false);
 
     mockAdminClient.from.mockImplementation((table: string) => {
@@ -149,11 +208,74 @@ describe('verifyBookAccess Security Domain Service', () => {
           }),
         };
       }
+      if (table === 'family_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
       return { select: vi.fn() };
     });
 
     const res = await verifyBookAccess('member-user-id', 'member@alpha.com', 'tenant-book-1');
+    expect(res.authorized).toBe(false);
+    expect(res.canShare).toBe(false);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('grants universal access but canShare: false if book is unpublished and user is a Platform Super Admin', async () => {
+    vi.spyOn(authModule, 'isPlatformSuperAdmin').mockResolvedValue(true);
+
+    mockAdminClient.from.mockImplementation((table: string) => {
+      if (table === 'books') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: 'tenant-book-1',
+                  tenant_id: 'tenant-alpha',
+                  is_public: false,
+                  cover_url: 'tenant-alpha/tenant-book-1-cover.jpg',
+                  storage_path: 'tenant-alpha/tenant-book-1.epub',
+                  title: 'Alpha Private Journal',
+                  author: 'Alpha Team',
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'tenant_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { role: 'reader' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'family_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    const res = await verifyBookAccess('member-user-id', 'superadmin@internal.com', 'tenant-book-1');
     expect(res.authorized).toBe(true);
+    expect(res.accessSource).toBe('super_admin');
+    expect(res.canShare).toBe(false);
     expect(res.book?.id).toBe('tenant-book-1');
   });
 
@@ -199,16 +321,24 @@ describe('verifyBookAccess Security Domain Service', () => {
           }),
         };
       }
+      if (table === 'family_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
       return { select: vi.fn() };
     });
 
     const res = await verifyBookAccess('outsider-user-id', 'outsider@other.com', 'tenant-secret-book');
     expect(res.authorized).toBe(false);
+    expect(res.canShare).toBe(false);
     expect(res.statusCode).toBe(403);
     expect(res.error).toContain('Forbidden');
   });
 
-  it('grants access if book is private but shared with the user through a family bookshelf', async () => {
+  it('grants access if book is private but shared with the user through a family bookshelf (read-only, canShare: false)', async () => {
     vi.spyOn(authModule, 'isPlatformSuperAdmin').mockResolvedValue(false);
 
     mockAdminClient.from.mockImplementation((table: string) => {
@@ -269,11 +399,20 @@ describe('verifyBookAccess Security Domain Service', () => {
           }),
         };
       }
+      if (table === 'family_members') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
       return { select: vi.fn() };
     });
 
     const res = await verifyBookAccess('family-kid-id', 'kid@family.com', 'family-shared-book');
     expect(res.authorized).toBe(true);
+    expect(res.accessSource).toBe('family');
+    expect(res.canShare).toBe(false);
     expect(res.book?.id).toBe('family-shared-book');
   });
 });

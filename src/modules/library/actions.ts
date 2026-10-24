@@ -1,9 +1,10 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getCurrentUser } from '@/modules/auth';
+import { getCurrentUser, isPlatformSuperAdmin } from '@/modules/auth';
 import { getUserTenants, findTenantRole } from '@/modules/tenant';
 import { canUploadBooks } from '@/modules/entitlements';
+import { isValidUuid } from '@/lib/validation';
 import { validateFileBasics, validateAndExtractMetadata } from './validation';
 import { insertBook, deleteBook, logAuditEvent } from './service';
 import { createAdminClient } from '@/lib/supabase/server';
@@ -42,36 +43,63 @@ export async function registerUploadedBookAction(
     }
 
     const tenantId = input.tenantId?.trim();
-    if (!tenantId) {
-      return { error: 'Missing active tenant identifier.' };
+    if (!tenantId || !isValidUuid(tenantId)) {
+      return { error: 'Missing or invalid tenant identifier.' };
     }
 
-    // Verify role authorization
+    // Verify role authorization (or platform super admin)
+    const isSuperAdmin = await isPlatformSuperAdmin(user.email);
     const memberships = await getUserTenants(user.id);
     const userRole = findTenantRole(memberships, tenantId);
-    if (!canUploadBooks(userRole)) {
+    if (!isSuperAdmin && !canUploadBooks(userRole)) {
       return { error: 'Access denied: Only space admins are permitted to register books.' };
     }
 
-    const title = input.title?.trim() || 'Untitled Document';
-    const author = input.author?.trim() || null;
-    const description = input.description?.trim() || null;
-    const format = input.format || 'epub';
-    const bookId = input.bookId?.trim() || crypto.randomUUID();
-    const storagePath = input.storagePath?.trim() || `${tenantId}/${bookId}.${format}`;
+    const rawTitle = input.title?.trim() || 'Untitled Document';
+    const title = rawTitle.slice(0, 255);
+    const author = input.author?.trim() ? input.author.trim().slice(0, 255) : null;
+    const description = input.description?.trim() ? input.description.trim().slice(0, 2000) : null;
+    const format = input.format?.toLowerCase() === 'pdf' ? 'pdf' : 'epub';
+    const bookId = (input.bookId && isValidUuid(input.bookId.trim()))
+      ? input.bookId.trim()
+      : crypto.randomUUID();
 
-    // Insert record into database
+    // Guard storage path strictly against traversal and tenant spoofing
+    const expectedPrefix = `${tenantId}/`;
+    let storagePath = input.storagePath?.trim();
+    if (storagePath) {
+      if (storagePath.includes('..') || !storagePath.startsWith(expectedPrefix)) {
+        return { error: 'Invalid storage path: must reside within the tenant directory.' };
+      }
+    } else {
+      storagePath = `${tenantId}/${bookId}.${format}`;
+    }
+
+    // Validate cover path if provided
+    let coverPath = input.coverPath?.trim() || null;
+    if (coverPath) {
+      if (coverPath.includes('..') || (!coverPath.startsWith(expectedPrefix) && !coverPath.startsWith('data:'))) {
+        coverPath = null;
+      }
+    }
+
+    const fileSize = typeof input.fileSize === 'number' && input.fileSize > 0
+      ? Math.min(input.fileSize, 52428800)
+      : 0;
+
+    // Insert record into database. Only platform Super Admin uploads default to public catalog.
     await insertBook({
       id: bookId,
       tenantId,
       title,
       author,
       description,
-      coverUrl: input.coverPath || null,
+      coverUrl: coverPath,
       storagePath,
-      fileSize: input.fileSize || 0,
+      fileSize,
       format,
       processingStatus: 'ready',
+      isPublic: isSuperAdmin ? true : false,
     });
 
     // Log Audit Event
@@ -79,7 +107,7 @@ export async function registerUploadedBookAction(
       bookId,
       title,
       author,
-      fileSize: input.fileSize,
+      fileSize,
       format,
     });
 
@@ -110,14 +138,15 @@ export async function uploadBookAction(
     }
 
     const tenantId = (formData.get('tenantId') as string)?.trim();
-    if (!tenantId) {
-      return { error: 'Missing active tenant identifier.' };
+    if (!tenantId || !isValidUuid(tenantId)) {
+      return { error: 'Missing or invalid tenant identifier.' };
     }
 
-    // Verify role authorization
+    // Verify role authorization (or platform super admin)
+    const isSuperAdmin = await isPlatformSuperAdmin(user.email);
     const memberships = await getUserTenants(user.id);
     const userRole = findTenantRole(memberships, tenantId);
-    if (!canUploadBooks(userRole)) {
+    if (!isSuperAdmin && !canUploadBooks(userRole)) {
       return { error: 'Access denied: Only tenant admins are permitted to upload books.' };
     }
 
@@ -188,7 +217,7 @@ export async function uploadBookAction(
       coverUrl = metadata.coverDataUrl;
     }
 
-    // 5. Insert record into database
+    // 5. Insert record into database. Only platform Super Admin uploads default to public catalog.
     await insertBook({
       tenantId,
       title,
@@ -199,6 +228,7 @@ export async function uploadBookAction(
       fileSize: file.size,
       format,
       processingStatus: 'ready',
+      isPublic: isSuperAdmin ? true : false,
     });
 
     // 6. Log Audit Event
@@ -232,15 +262,22 @@ export async function deleteBookAction(
       return { error: 'Authentication required.' };
     }
 
+    const cleanTenantId = tenantId?.trim();
+    const cleanBookId = bookId?.trim();
+    if (!cleanTenantId || !cleanBookId || !isValidUuid(cleanTenantId) || !isValidUuid(cleanBookId)) {
+      return { error: 'Invalid tenant or book identifier.' };
+    }
+
+    const isSuperAdmin = await isPlatformSuperAdmin(user.email);
     const memberships = await getUserTenants(user.id);
-    const userRole = findTenantRole(memberships, tenantId);
-    if (!canUploadBooks(userRole)) {
+    const userRole = findTenantRole(memberships, cleanTenantId);
+    if (!isSuperAdmin && !canUploadBooks(userRole)) {
       return { error: 'Access denied: Only tenant admins can delete books.' };
     }
 
-    await deleteBook(tenantId, bookId);
+    await deleteBook(cleanTenantId, cleanBookId);
 
-    await logAuditEvent(tenantId, user.id, 'BOOK_DELETED', { bookId });
+    await logAuditEvent(cleanTenantId, user.id, 'BOOK_DELETED', { bookId: cleanBookId });
 
     revalidatePath('/dashboard');
     return { success: true };
