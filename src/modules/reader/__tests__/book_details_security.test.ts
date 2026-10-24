@@ -40,7 +40,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         }),
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const res = await getBookDetails('private-book-123');
       expect(res).toBeNull();
@@ -89,7 +89,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         }),
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const res = await getBookDetails('public-book-1');
       expect(res).not.toBeNull();
@@ -129,7 +129,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         }),
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const res = await getBookDetails('public-book-1', 'tenant-different');
       expect(res).toBeNull();
@@ -145,7 +145,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         },
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       vi.mocked(verifyBookAccess).mockResolvedValue({
         authorized: false,
@@ -166,7 +166,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         },
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       vi.mocked(verifyBookAccess).mockResolvedValue({
         authorized: true,
@@ -193,7 +193,7 @@ describe('getBookDetails Security Tests', () => {
           }),
         },
       };
-      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as ReturnType<typeof createClient>);
+      vi.mocked(createClient).mockResolvedValue(mockSupabase as unknown as Awaited<ReturnType<typeof createClient>>);
 
       vi.mocked(verifyBookAccess).mockResolvedValue({
         authorized: true,

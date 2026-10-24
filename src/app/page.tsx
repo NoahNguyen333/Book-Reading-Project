@@ -6,9 +6,9 @@ export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gradient-to-b from-blue-50 to-white dark:from-gray-950 dark:to-gray-900">
       <div className="max-w-3xl text-center space-y-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-          <Sparkles className="w-4 h-4" />
-          <span>Session 2: Auth & Family Tenancy Active</span>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium bg-amber-100/70 text-amber-900 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800/40 shadow-xs">
+          <Sparkles className="w-3.5 h-3.5 text-[#C25E38] dark:text-[#D97750]" />
+          <span>Connected Reading Spaces for Families</span>
         </div>
 
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-gray-900 dark:text-white">
