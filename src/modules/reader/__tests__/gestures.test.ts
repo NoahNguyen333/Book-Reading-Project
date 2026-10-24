@@ -8,12 +8,16 @@ import {
   isInteractiveElement,
   isContainerZoomed,
   isPannedToHorizontalBoundary,
+  TABLET_READER_TOUCH_OPTIONS,
+  resolveNavigationAction,
 } from '../gestures';
 
 describe('Reader Gestures, Touch Navigation & Resilient Layout Engine', () => {
   describe('Resilient EPUB CSS & Layout Injection', () => {
     it('contains word overflow and responsive media rules', () => {
       expect(RESILIENT_EPUB_CSS).toContain('overflow-wrap: break-word');
+      expect(RESILIENT_EPUB_CSS).toContain('touch-action: pan-y manipulation');
+      expect(RESILIENT_EPUB_CSS).toContain('-webkit-touch-callout: none');
       expect(RESILIENT_EPUB_CSS).toContain('max-width: 100% !important');
       expect(RESILIENT_EPUB_CSS).toContain('height: auto !important');
       expect(RESILIENT_EPUB_CSS).toContain('object-fit: contain');
@@ -276,6 +280,117 @@ describe('Reader Gestures, Touch Navigation & Resilient Layout Engine', () => {
         scrollLeft: 0,
       } as HTMLElement;
       expect(isPannedToHorizontalBoundary(atLeftEdge, 'right', 30)).toBe(true);
+    });
+  });
+
+  describe('TABLET_READER_TOUCH_OPTIONS & iPad Gesture Refinement', () => {
+    const width = 1024; // Standard 10" / 11" iPad width
+
+    it('accepts natural curved thumb-arc swipe with TABLET_READER_TOUCH_OPTIONS', () => {
+      // deltaX = 75px, deltaY = 45px (angle ~31° from horizontal axis)
+      // Default dominantRatio (2.0): requires 75 >= 45 * 2 = 90 -> REJECTED
+      // Tablet dominantRatio (1.25): requires 75 >= 45 * 1.25 = 56.25 -> ACCEPTED
+      const defaultAction = classifyTouchGesture(200, 300, 125, 345, 280, width);
+      expect(defaultAction).toEqual({ type: 'none', reason: 'vertical_movement_not_dominant' });
+
+      const tabletAction = classifyTouchGesture(
+        200,
+        300,
+        125,
+        345,
+        280,
+        width,
+        TABLET_READER_TOUCH_OPTIONS
+      );
+      expect(tabletAction).toEqual({ type: 'swipe', direction: 'left' });
+    });
+
+    it('accepts relaxed deliberate page turns up to 750ms on tablet glass', () => {
+      // Swiped 120px over 680ms (natural reading page turn)
+      // Default maxSwipeDuration (600ms): REJECTED
+      // Tablet maxSwipeDuration (750ms): ACCEPTED
+      const defaultAction = classifyTouchGesture(250, 400, 130, 410, 680, width);
+      expect(defaultAction.type).toBe('none');
+
+      const tabletAction = classifyTouchGesture(
+        250,
+        400,
+        130,
+        410,
+        680,
+        width,
+        TABLET_READER_TOUCH_OPTIONS
+      );
+      expect(tabletAction).toEqual({ type: 'swipe', direction: 'left' });
+    });
+
+    it('still rejects predominantly vertical scroll motions under tablet options', () => {
+      // User is scrolling down vertically: deltaX = 35px, deltaY = 85px
+      const action = classifyTouchGesture(
+        300,
+        200,
+        335,
+        285,
+        300,
+        width,
+        TABLET_READER_TOUCH_OPTIONS
+      );
+      expect(action.type).toBe('none');
+    });
+
+    it('tolerates up to 16px capacitive contact roll during edge taps', () => {
+      // Tapped in left edge at x=80 (8% of 1024), finger rolled 14px horizontally during tap
+      const action = classifyTouchGesture(
+        80,
+        300,
+        94,
+        302,
+        150,
+        width,
+        TABLET_READER_TOUCH_OPTIONS
+      );
+      expect(action.type).toBe('tap');
+      if (action.type === 'tap') {
+        expect(action.zone).toBe('left');
+      }
+    });
+  });
+
+  describe('resolveNavigationAction - Reading Direction Mapping', () => {
+    it('correctly maps LTR swipe and tap actions', () => {
+      expect(resolveNavigationAction({ type: 'swipe', direction: 'left' }, 'ltr')).toBe('next');
+      expect(resolveNavigationAction({ type: 'swipe', direction: 'right' }, 'ltr')).toBe('prev');
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'left', relativeX: 0.1 }, 'ltr')
+      ).toBe('prev');
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'right', relativeX: 0.9 }, 'ltr')
+      ).toBe('next');
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'center', relativeX: 0.5 }, 'ltr')
+      ).toBe('toggle_toolbar');
+    });
+
+    it('correctly inverts navigation in RTL reading direction', () => {
+      // In RTL: swiping left turns to previous page, swiping right advances to next page
+      expect(resolveNavigationAction({ type: 'swipe', direction: 'left' }, 'rtl')).toBe('prev');
+      expect(resolveNavigationAction({ type: 'swipe', direction: 'right' }, 'rtl')).toBe('next');
+      // In RTL: tapping left edge advances to next page, tapping right edge returns to previous page
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'left', relativeX: 0.1 }, 'rtl')
+      ).toBe('next');
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'right', relativeX: 0.9 }, 'rtl')
+      ).toBe('prev');
+      // Center tap still toggles toolbar in RTL
+      expect(
+        resolveNavigationAction({ type: 'tap', zone: 'center', relativeX: 0.5 }, 'rtl')
+      ).toBe('toggle_toolbar');
+    });
+
+    it('returns "none" for non-navigating actions', () => {
+      expect(resolveNavigationAction({ type: 'none', reason: 'cancelled' }, 'ltr')).toBe('none');
+      expect(resolveNavigationAction({ type: 'none', reason: 'cancelled' }, 'rtl')).toBe('none');
     });
   });
 });

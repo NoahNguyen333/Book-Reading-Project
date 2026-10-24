@@ -7,6 +7,10 @@
  */
 export const RESILIENT_EPUB_CSS = `
 /* Prevent text and long unbroken words/URLs from overflowing column */
+html, body {
+  touch-action: pan-y manipulation;
+  -webkit-touch-callout: none;
+}
 body {
   overflow-wrap: break-word !important;
   word-wrap: break-word !important;
@@ -76,10 +80,71 @@ export interface TouchGestureOptions {
   rightEdgeThreshold?: number;
 }
 
+/**
+ * Tablet-optimized touch gesture options for iPad and touchscreens:
+ * - dominantRatio: 1.25 allows natural thumb-arc swipes (~38° from horizontal) without failing dominance checks
+ * - maxSwipeDuration: 750ms accommodates deliberate or relaxed swipe motions across larger displays
+ * - maxTapDistance: 16px handles minor capacitive contact rolling during edge taps
+ */
+export const TABLET_READER_TOUCH_OPTIONS: TouchGestureOptions = {
+  minSwipeDistance: 50,
+  maxSwipeDuration: 750,
+  minSwipeDuration: 40,
+  dominantRatio: 1.25,
+  maxTapDistance: 16,
+  maxTapDuration: 350,
+  leftEdgeThreshold: 0.20,
+  rightEdgeThreshold: 0.80,
+};
+
 export type GestureAction =
   | { type: 'swipe'; direction: 'left' | 'right' }
   | { type: 'tap'; zone: 'left' | 'right' | 'center'; relativeX: number }
   | { type: 'none'; reason: string };
+
+export type ReadingDirection = 'ltr' | 'rtl';
+
+/**
+ * Resolves a high-level reader navigation command from a gesture action,
+ * respecting the book's reading direction (LTR vs RTL).
+ *
+ * In LTR:
+ * - Swipe left -> Next page
+ * - Swipe right -> Previous page
+ * - Tap left edge -> Previous page
+ * - Tap right edge -> Next page
+ *
+ * In RTL:
+ * - Swipe left -> Previous page
+ * - Swipe right -> Next page
+ * - Tap left edge -> Next page
+ * - Tap right edge -> Previous page
+ *
+ * Center tap toggles toolbar visibility regardless of direction.
+ */
+export function resolveNavigationAction(
+  action: GestureAction,
+  direction: ReadingDirection = 'ltr'
+): 'prev' | 'next' | 'toggle_toolbar' | 'none' {
+  if (action.type === 'swipe') {
+    if (direction === 'rtl') {
+      return action.direction === 'left' ? 'prev' : 'next';
+    }
+    return action.direction === 'left' ? 'next' : 'prev';
+  }
+
+  if (action.type === 'tap') {
+    if (action.zone === 'center') {
+      return 'toggle_toolbar';
+    }
+    if (direction === 'rtl') {
+      return action.zone === 'left' ? 'next' : 'prev';
+    }
+    return action.zone === 'left' ? 'prev' : 'next';
+  }
+
+  return 'none';
+}
 
 /**
  * Classifies a touch gesture based on distance, elapsed time, and dominant direction.

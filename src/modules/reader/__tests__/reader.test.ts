@@ -6,6 +6,7 @@ import {
   MAX_FONT_SIZE,
   DEFAULT_FONT_SIZE,
   createDebouncedFn,
+  createProgressSyncManager,
 } from '../utils';
 import { attachContentsCleanup } from '../gestures';
 
@@ -252,6 +253,138 @@ describe('EPUB Reader Utilities & State Machine', () => {
       // Subsequent pagehide or destroy does not re-invoke onCleanup
       mockWindow.dispatchEvent(new Event('pagehide'));
       expect(onCleanup).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('createProgressSyncManager - Navigation Reliability & Sequence Protection', () => {
+    it('debounces rapid sequential progress updates and records only latest position', async () => {
+      const mockSave = vi.fn().mockResolvedValue(undefined);
+      const manager = createProgressSyncManager({
+        onSave: mockSave,
+        debounceMs: 500,
+      });
+
+      // User flips 4 pages in 200ms
+      manager.schedule('epubcfi(/6/2[c1]!/4/1:0)', 10);
+      manager.schedule('epubcfi(/6/2[c1]!/4/5:0)', 15);
+      manager.schedule('epubcfi(/6/2[c1]!/4/12:0)', 20);
+      manager.schedule('epubcfi(/6/4[c2]!/4/1:0)', 25);
+
+      expect(mockSave).not.toHaveBeenCalled();
+      expect(manager.hasPending()).toBe(true);
+      expect(manager.getLatestSeq()).toBe(4);
+
+      // Advance timers past debounce
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(mockSave).toHaveBeenCalledTimes(1);
+      expect(mockSave).toHaveBeenCalledWith({
+        cfi: 'epubcfi(/6/4[c2]!/4/1:0)',
+        percentage: 25,
+      });
+      expect(manager.getLastSavedSeq()).toBe(4);
+      expect(manager.hasPending()).toBe(false);
+    });
+
+    it('immediately flushes pending progress on unmount or tab switch without waiting for timer', async () => {
+      const mockSave = vi.fn().mockResolvedValue(undefined);
+      const manager = createProgressSyncManager({
+        onSave: mockSave,
+        debounceMs: 1000,
+      });
+
+      manager.schedule('epubcfi(/6/6[c3]!/4/10:0)', 45);
+      expect(mockSave).not.toHaveBeenCalled();
+
+      // Trigger flush immediately (as occurs in unmount or visibilitychange hidden)
+      await manager.flush();
+
+      expect(mockSave).toHaveBeenCalledTimes(1);
+      expect(mockSave).toHaveBeenCalledWith({
+        cfi: 'epubcfi(/6/6[c3]!/4/10:0)',
+        percentage: 45,
+      });
+      expect(manager.hasPending()).toBe(false);
+
+      // Advancing timer afterwards does not trigger duplicate save
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(mockSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('prevents duplicate saves when flush is called with no newer updates', async () => {
+      const mockSave = vi.fn().mockResolvedValue(undefined);
+      const manager = createProgressSyncManager({
+        onSave: mockSave,
+        debounceMs: 500,
+      });
+
+      manager.schedule('epubcfi(/6/2!/4:0)', 5);
+      await manager.flush();
+      expect(mockSave).toHaveBeenCalledTimes(1);
+
+      // Calling flush again without new data does nothing
+      await manager.flush();
+      expect(mockSave).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('CFI Restoration Resilience & Navigation Boundaries', () => {
+    it('gracefully recovers when initial CFI display rejects by falling back to book start', async () => {
+      const mockDisplay = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Invalid initial CFI'))
+        .mockResolvedValueOnce(undefined);
+
+      const restoreInitialPosition = async (initialCfi?: string) => {
+        try {
+          await mockDisplay(initialCfi);
+        } catch {
+          // Resilient fallback to start of book
+          await mockDisplay();
+        }
+      };
+
+      await restoreInitialPosition('invalid-cfi-1234');
+
+      expect(mockDisplay).toHaveBeenCalledTimes(2);
+      expect(mockDisplay).toHaveBeenNthCalledWith(1, 'invalid-cfi-1234');
+      expect(mockDisplay).toHaveBeenNthCalledWith(2);
+    });
+
+    it('enforces boundary locks when at start or end of book', () => {
+      const prevAction = vi.fn();
+      const nextAction = vi.fn();
+
+      const navigate = (
+        direction: 'prev' | 'next',
+        isAtStart: boolean,
+        isAtEnd: boolean,
+        isTurning: boolean
+      ) => {
+        if (isTurning) return;
+        if (direction === 'prev' && !isAtStart) prevAction();
+        if (direction === 'next' && !isAtEnd) nextAction();
+      };
+
+      // When at start of book: prev is blocked, next is allowed
+      navigate('prev', true, false, false);
+      expect(prevAction).not.toHaveBeenCalled();
+
+      navigate('next', true, false, false);
+      expect(nextAction).toHaveBeenCalledTimes(1);
+
+      // When at end of book: next is blocked, prev is allowed
+      navigate('next', false, true, false);
+      expect(nextAction).toHaveBeenCalledTimes(1); // Not incremented
+
+      navigate('prev', false, true, false);
+      expect(prevAction).toHaveBeenCalledTimes(1);
+
+      // When currently turning: both are locked
+      navigate('prev', false, false, true);
+      navigate('next', false, false, true);
+      expect(prevAction).toHaveBeenCalledTimes(1);
+      expect(nextAction).toHaveBeenCalledTimes(1);
     });
   });
 });

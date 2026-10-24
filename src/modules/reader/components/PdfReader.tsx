@@ -35,6 +35,8 @@ import {
   parsePageFromCfi,
   formatPageCfi,
   calculatePagePercentage,
+  createProgressSyncManager,
+  ProgressSyncManager,
 } from '../utils';
 import {
   classifyTouchGesture,
@@ -42,6 +44,8 @@ import {
   isInteractiveElement,
   isContainerZoomed,
   isPannedToHorizontalBoundary,
+  TABLET_READER_TOUCH_OPTIONS,
+  resolveNavigationAction,
 } from '../gestures';
 import { saveReadingProgressAction, addBookmarkAction, deleteBookmarkAction } from '../actions';
 
@@ -133,25 +137,43 @@ export function PdfReader({
   // Page direct input
   const [inputPage, setInputPage] = useState<string>(String(initialPage));
 
-  // Debounced progress save
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const syncProgressDebounced = useCallback(
-    (page: number, total: number) => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(async () => {
+  // Reliable reading progress sync manager (ordered, debounced, flushed on unmount)
+  const progressManagerRef = useRef<ProgressSyncManager | null>(null);
+  if (!progressManagerRef.current) {
+    progressManagerRef.current = createProgressSyncManager({
+      debounceMs: 800,
+      onSave: async ({ cfi, percentage }) => {
         try {
-          const pct = calculatePagePercentage(page, total);
-          await saveReadingProgressAction(bookId, tenantId, formatPageCfi(page), pct);
+          await saveReadingProgressAction(bookId, tenantId, cfi, percentage);
         } catch (err) {
           console.warn('Failed to save PDF reading progress:', err);
         }
-      }, 1000);
-    },
-    [bookId, tenantId]
-  );
+      },
+    });
+  }
+
+  // Flush pending progress on visibility change, pagehide, or unmount
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void progressManagerRef.current?.flush();
+      }
+    };
+    const handlePageHide = () => {
+      void progressManagerRef.current?.flush();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      void progressManagerRef.current?.flush();
+    };
+  }, []);
 
   // Load PDF Document
   useEffect(() => {
@@ -322,8 +344,9 @@ export function PdfReader({
       renderPage(currentPage, zoom);
       setInputPage(String(currentPage));
 
-      if (!disableProgressSaveRef.current) {
-        syncProgressDebounced(currentPage, totalPages);
+      if (!disableProgressSaveRef.current && totalPages > 0) {
+        const pct = calculatePagePercentage(currentPage, totalPages);
+        progressManagerRef.current?.schedule(formatPageCfi(currentPage), pct);
       }
 
       if (onLocationChangeRef.current && totalPages > 0) {
@@ -331,7 +354,7 @@ export function PdfReader({
         onLocationChangeRef.current(formatPageCfi(currentPage), pct);
       }
     }
-  }, [currentPage, zoom, isDocumentLoading, totalPages, renderPage, syncProgressDebounced]);
+  }, [currentPage, zoom, isDocumentLoading, totalPages, renderPage]);
 
   // Page Controls with turning lock
   const handlePrev = useCallback(() => {
@@ -378,6 +401,11 @@ export function PdfReader({
     }
   };
 
+  const handleTouchCancel = () => {
+    isMultiTouchRef.current = false;
+    touchStartRef.current = null;
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (isMultiTouchRef.current || !touchStartRef.current) {
       isMultiTouchRef.current = false;
@@ -418,23 +446,25 @@ export function PdfReader({
       touch.clientX,
       touch.clientY,
       elapsed,
-      rect.width
+      rect.width,
+      TABLET_READER_TOUCH_OPTIONS
     );
 
+    const navAction = resolveNavigationAction(action, 'ltr');
+
     if (action.type === 'swipe') {
-      if (action.direction === 'left' && currentPage < totalPages) {
+      if (navAction === 'next' && currentPage < totalPages) {
         handleNext();
-      } else if (action.direction === 'right' && currentPage > 1) {
+      } else if (navAction === 'prev' && currentPage > 1) {
         handlePrev();
       }
     } else if (action.type === 'tap') {
-      const relativeX = (touch.clientX - rect.left) / rect.width;
       // Edge taps are disabled when zoomed to prevent accidental page turns while inspecting content
-      if (!isZoomed && relativeX <= 0.20 && currentPage > 1) {
+      if (!isZoomed && navAction === 'prev' && currentPage > 1) {
         handlePrev();
-      } else if (!isZoomed && relativeX >= 0.80 && currentPage < totalPages) {
+      } else if (!isZoomed && navAction === 'next' && currentPage < totalPages) {
         handleNext();
-      } else if (relativeX > 0.20 && relativeX < 0.80) {
+      } else if (navAction === 'toggle_toolbar') {
         setIsToolbarVisible((v) => !v);
       }
     }
@@ -628,14 +658,15 @@ export function PdfReader({
         </div>
 
         {/* Center: Page Jump and Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={handlePrev}
             disabled={currentPage <= 1 || isPageRendering}
-            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-40"
+            aria-label="Previous Page"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-30 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
             title="Previous Page"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
           <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1.5 text-xs font-semibold">
@@ -644,6 +675,7 @@ export function PdfReader({
               value={inputPage}
               onChange={(e) => setInputPage(e.target.value)}
               onBlur={() => setInputPage(String(currentPage))}
+              aria-label="Page Number"
               className="w-12 text-center py-1 border border-black/20 dark:border-white/20 rounded-md bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <span className="opacity-75">/ {totalPages}</span>
@@ -652,10 +684,11 @@ export function PdfReader({
           <button
             onClick={handleNext}
             disabled={currentPage >= totalPages || isPageRendering}
-            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-40"
+            aria-label="Next Page"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-30 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
             title="Next Page"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
@@ -713,59 +746,85 @@ export function PdfReader({
         </div>
       </div>
 
-      {/* Main Canvas Viewport with Touch Zones & Gestures */}
-      <div
-        ref={containerRef}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className="relative flex-1 w-full h-full overflow-auto flex items-center justify-center p-4 min-h-[80vh]"
-      >
-        {isDocumentLoading ? (
-          <div className="flex flex-col items-center justify-center space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <p className="text-xs font-semibold text-gray-400">Loading PDF document...</p>
-          </div>
-        ) : (
-          <div className="relative shadow-2xl rounded-sm transition-all duration-150 min-h-[600px] flex items-center justify-center">
-            {isPageRendering && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/10 dark:bg-white/5 backdrop-blur-[1px]">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-              </div>
-            )}
-            <canvas
-              ref={canvasRef}
-              style={{ filter: canvasFilter }}
-              className="block rounded-sm transition duration-150"
-            />
-            {/* Selectable Text Layer Overlay */}
-            <div
-              className="absolute inset-0 overflow-hidden pointer-events-auto select-text"
-              style={{
-                width: canvasRef.current?.style.width,
-                height: canvasRef.current?.style.height,
-              }}
-            >
-              {textItems.map((item, idx) => (
-                <span
-                  key={idx}
-                  style={{
-                    position: 'absolute',
-                    left: `${item.left}px`,
-                    top: `${item.top}px`,
-                    fontSize: `${item.fontSize}px`,
-                    lineHeight: `${item.height}px`,
-                    color: 'transparent',
-                    userSelect: 'text',
-                  }}
-                >
-                  {item.str}
-                </span>
-              ))}
+      {/* Main Canvas Viewport Wrapper */}
+      <div className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center">
+        {/* Previous Page Button (Left Edge Gutter on Tablet/Desktop) */}
+        <button
+          onClick={handlePrev}
+          disabled={currentPage <= 1 || isPageRendering}
+          aria-label="Previous Page"
+          className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all duration-200 backdrop-blur-md opacity-60 hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[48px] min-h-[48px] hidden md:flex items-center justify-center cursor-pointer disabled:opacity-20 disabled:pointer-events-none"
+          title="Previous Page (Left Arrow)"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+
+        {/* Scrollable Canvas Viewport with Touch Zones & Gestures */}
+        <div
+          ref={containerRef}
+          onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
+          className="w-full h-full overflow-auto flex items-center justify-center p-4 min-h-[80vh]"
+        >
+          {isDocumentLoading ? (
+            <div className="flex flex-col items-center justify-center space-y-3">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+              <p className="text-xs font-semibold text-gray-400">Loading PDF document...</p>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="relative shadow-2xl rounded-sm transition-all duration-150 min-h-[600px] flex items-center justify-center">
+              {isPageRendering && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/10 dark:bg-white/5 backdrop-blur-[1px]">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                </div>
+              )}
+              <canvas
+                ref={canvasRef}
+                style={{ filter: canvasFilter }}
+                className="block rounded-sm transition duration-150"
+              />
+              {/* Selectable Text Layer Overlay */}
+              <div
+                className="absolute inset-0 overflow-hidden pointer-events-auto select-text"
+                style={{
+                  width: canvasRef.current?.style.width,
+                  height: canvasRef.current?.style.height,
+                }}
+              >
+                {textItems.map((item, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      position: 'absolute',
+                      left: `${item.left}px`,
+                      top: `${item.top}px`,
+                      fontSize: `${item.fontSize}px`,
+                      lineHeight: `${item.height}px`,
+                      color: 'transparent',
+                      userSelect: 'text',
+                    }}
+                  >
+                    {item.str}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Next Page Button (Right Edge Gutter on Tablet/Desktop) */}
+        <button
+          onClick={handleNext}
+          disabled={currentPage >= totalPages || isPageRendering}
+          aria-label="Next Page"
+          className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all duration-200 backdrop-blur-md opacity-60 hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[48px] min-h-[48px] hidden md:flex items-center justify-center cursor-pointer disabled:opacity-20 disabled:pointer-events-none"
+          title="Next Page (Right Arrow)"
+        >
+          <ChevronRight className="w-6 h-6" />
+        </button>
       </div>
 
       {/* Bottom Progress Bar */}

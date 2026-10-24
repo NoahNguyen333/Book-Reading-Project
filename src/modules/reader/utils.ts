@@ -105,3 +105,92 @@ export function createDebouncedFn<T extends (...args: any[]) => void>(
 
   return { fn, cancel };
 }
+
+export interface ProgressData {
+  cfi: string;
+  percentage: number;
+}
+
+export interface ProgressSyncManagerOptions {
+  onSave: (data: ProgressData) => Promise<unknown>;
+  debounceMs?: number;
+}
+
+export interface ProgressSyncManager {
+  schedule: (cfi: string, percentage: number) => void;
+  flush: () => Promise<void>;
+  cancel: () => void;
+  hasPending: () => boolean;
+  getLatestSeq: () => number;
+  getLastSavedSeq: () => number;
+}
+
+/**
+ * Creates a robust reading progress synchronization manager that:
+ * 1. Debounces rapid progress updates during active page navigation.
+ * 2. Uses monotonic sequence IDs to prevent out-of-order save race conditions.
+ * 3. Provides synchronous/async flush capability on component unmount and page visibility change.
+ */
+export function createProgressSyncManager(
+  options: ProgressSyncManagerOptions
+): ProgressSyncManager {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let latestSeq = 0;
+  let lastSavedSeq = 0;
+  let pendingData: (ProgressData & { seq: number }) | null = null;
+
+  const flush = async (): Promise<void> => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+
+    if (!pendingData || pendingData.seq <= lastSavedSeq) {
+      return;
+    }
+
+    const currentToSave = pendingData;
+    try {
+      await options.onSave({
+        cfi: currentToSave.cfi,
+        percentage: currentToSave.percentage,
+      });
+      if (currentToSave.seq > lastSavedSeq) {
+        lastSavedSeq = currentToSave.seq;
+      }
+    } catch (err) {
+      console.warn('Failed to save reading progress:', err);
+    }
+  };
+
+  const schedule = (cfi: string, percentage: number): void => {
+    const seq = ++latestSeq;
+    pendingData = { cfi, percentage, seq };
+
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      void flush();
+    }, options.debounceMs ?? 800);
+  };
+
+  const cancel = (): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const hasPending = (): boolean =>
+    Boolean(pendingData && pendingData.seq > lastSavedSeq);
+
+  return {
+    schedule,
+    flush,
+    cancel,
+    hasPending,
+    getLatestSeq: () => latestSeq,
+    getLastSavedSeq: () => lastSavedSeq,
+  };
+}

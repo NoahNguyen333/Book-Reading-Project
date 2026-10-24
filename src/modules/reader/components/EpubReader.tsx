@@ -34,6 +34,8 @@ import {
   THEME_CONFIGS,
   clampFontSize,
   DEFAULT_FONT_SIZE,
+  createProgressSyncManager,
+  ProgressSyncManager,
 } from '../utils';
 import {
   classifyTouchGesture,
@@ -41,6 +43,9 @@ import {
   hasActiveSelection,
   isInteractiveElement,
   attachContentsCleanup,
+  TABLET_READER_TOUCH_OPTIONS,
+  ReadingDirection,
+  resolveNavigationAction,
 } from '../gestures';
 import { saveReadingProgressAction, addBookmarkAction, deleteBookmarkAction } from '../actions';
 
@@ -109,6 +114,19 @@ export function EpubReader({
   const isMultiTouchRef = useRef(false);
   const isTurningRef = useRef(false);
 
+  // Reading direction (LTR default, detects RTL metadata)
+  const [readingDirection, setReadingDirection] = useState<ReadingDirection>('ltr');
+  const readingDirectionRef = useRef(readingDirection);
+  readingDirectionRef.current = readingDirection;
+
+  // Book boundaries
+  const [isAtStart, setIsAtStart] = useState(false);
+  const [isAtEnd, setIsAtEnd] = useState(false);
+  const isAtStartRef = useRef(isAtStart);
+  isAtStartRef.current = isAtStart;
+  const isAtEndRef = useRef(isAtEnd);
+  isAtEndRef.current = isAtEnd;
+
   const currentCfiRef = useRef(currentCfi);
   currentCfiRef.current = currentCfi;
   const isInitialMountRef = useRef(true);
@@ -116,11 +134,23 @@ export function EpubReader({
   const fontResizeRafRef = useRef<number | null>(null);
   const contentAbortControllersRef = useRef<Set<AbortController>>(new Set());
 
-  // Page Navigation Handlers with debounce lock to prevent duplicate page turns
+  // Page Navigation Handlers with boundary protection and resilient unlock
   const handlePrev = useCallback(() => {
     if (isTurningRef.current) return;
+    if (isAtStartRef.current) return;
     isTurningRef.current = true;
-    renditionRef.current?.prev();
+    try {
+      const res = renditionRef.current?.prev();
+      if (res && typeof (res as Promise<void>).catch === 'function') {
+        (res as Promise<void>).catch((err) => {
+          console.debug('EPUB prev navigation caught:', err);
+          isTurningRef.current = false;
+        });
+      }
+    } catch (err) {
+      console.debug('EPUB prev navigation exception:', err);
+      isTurningRef.current = false;
+    }
     setTimeout(() => {
       isTurningRef.current = false;
     }, 350);
@@ -128,8 +158,20 @@ export function EpubReader({
 
   const handleNext = useCallback(() => {
     if (isTurningRef.current) return;
+    if (isAtEndRef.current) return;
     isTurningRef.current = true;
-    renditionRef.current?.next();
+    try {
+      const res = renditionRef.current?.next();
+      if (res && typeof (res as Promise<void>).catch === 'function') {
+        (res as Promise<void>).catch((err) => {
+          console.debug('EPUB next navigation caught:', err);
+          isTurningRef.current = false;
+        });
+      }
+    } catch (err) {
+      console.debug('EPUB next navigation exception:', err);
+      isTurningRef.current = false;
+    }
     setTimeout(() => {
       isTurningRef.current = false;
     }, 350);
@@ -147,8 +189,44 @@ export function EpubReader({
     position: { x: number; y: number };
   } | null>(null);
 
-  // Debounced progress save ref
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Reliable reading progress sync manager (debounced, ordered by sequence ID, flushed on unmount)
+  const progressManagerRef = useRef<ProgressSyncManager | null>(null);
+  if (!progressManagerRef.current) {
+    progressManagerRef.current = createProgressSyncManager({
+      debounceMs: 800,
+      onSave: async ({ cfi, percentage }) => {
+        try {
+          await saveReadingProgressAction(bookId, tenantId, cfi, percentage);
+        } catch (err) {
+          console.warn('Failed to save reading progress:', err);
+        }
+      },
+    });
+  }
+
+  // Flush pending progress on page visibility change or tab close
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void progressManagerRef.current?.flush();
+      }
+    };
+    const handlePageHide = () => {
+      void progressManagerRef.current?.flush();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      void progressManagerRef.current?.flush();
+    };
+  }, []);
+
   const initialAnnotationsRef = useRef(initialAnnotations);
   useEffect(() => {
     initialAnnotationsRef.current = initialAnnotations;
@@ -175,22 +253,6 @@ export function EpubReader({
       // Safe skip if location cannot be marked
     }
   }, [liveAnnotation]);
-
-  const syncProgressDebounced = useCallback(
-    (cfi: string, pct: number) => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(async () => {
-        try {
-          await saveReadingProgressAction(bookId, tenantId, cfi, pct);
-        } catch (err) {
-          console.warn('Failed to save reading progress:', err);
-        }
-      }, 1000);
-    },
-    [bookId, tenantId]
-  );
 
   // Initialize EPUB Book & Rendition
   useEffect(() => {
@@ -282,6 +344,15 @@ export function EpubReader({
       );
 
       doc.addEventListener(
+        'touchcancel',
+        () => {
+          isIframeMultiTouch = false;
+          iframeTouchStart = null;
+        },
+        { passive: true, signal: abortController.signal }
+      );
+
+      doc.addEventListener(
         'touchend',
         (e: TouchEvent) => {
           if (isIframeMultiTouch || !iframeTouchStart) {
@@ -307,31 +378,44 @@ export function EpubReader({
             touch.clientX,
             touch.clientY,
             elapsed,
-            width
+            width,
+            TABLET_READER_TOUCH_OPTIONS
           );
 
-          if (action.type === 'swipe') {
-            if (action.direction === 'left') {
-              handleNextRef.current();
-            } else {
-              handlePrevRef.current();
-            }
-          } else if (action.type === 'tap') {
-            if (action.zone === 'left') {
-              handlePrevRef.current();
-            } else if (action.zone === 'right') {
-              handleNextRef.current();
-            } else {
-              setIsToolbarVisible((v) => !v);
-            }
+          const navAction = resolveNavigationAction(action, readingDirectionRef.current);
+          if (navAction === 'next') {
+            handleNextRef.current();
+          } else if (navAction === 'prev') {
+            handlePrevRef.current();
+          } else if (navAction === 'toggle_toolbar') {
+            setIsToolbarVisible((v) => !v);
           }
         },
         { passive: true, signal: abortController.signal }
       );
     });
 
-    // Display initial position
-    rendition.display(initialCfi || undefined);
+    // Display initial position with resilient fallback
+    rendition
+      .display(initialCfi || undefined)
+      .catch((err) => {
+        console.warn('Initial CFI display failed, falling back to first chapter:', err);
+        return rendition.display();
+      })
+      .catch((err) => {
+        console.error('Failed to display EPUB start:', err);
+      });
+
+    // Extract metadata & reading direction
+    book.loaded.metadata
+      .then((meta) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dir = (meta as any)?.direction || (book as any).packaging?.metadata?.direction;
+        if (dir === 'rtl') {
+          setReadingDirection('rtl');
+        }
+      })
+      .catch((err) => console.debug('Could not inspect EPUB metadata direction:', err));
 
     // Extract Table of Contents
     book.loaded.navigation
@@ -360,6 +444,9 @@ export function EpubReader({
       const cfi = location.start.cfi;
       setCurrentCfi(cfi);
 
+      setIsAtStart(Boolean(location.atStart));
+      setIsAtEnd(Boolean(location.atEnd));
+
       let pct = 0;
       if (book.locations && typeof book.locations.percentageFromCfi === 'function') {
         pct = Math.round((book.locations.percentageFromCfi(cfi) || 0) * 100);
@@ -371,7 +458,7 @@ export function EpubReader({
       }
 
       if (!disableProgressSaveRef.current) {
-        syncProgressDebounced(cfi, pct);
+        progressManagerRef.current?.schedule(cfi, pct);
       }
     });
 
@@ -425,9 +512,9 @@ export function EpubReader({
 
     // Cleanup on unmount
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+      // Flush any pending debounced progress update immediately
+      void progressManagerRef.current?.flush();
+
       // Abort all active content listeners across all views
       activeControllers.forEach((ac) => {
         try {
@@ -453,7 +540,7 @@ export function EpubReader({
         bookRef.current = null;
       }
     };
-  }, [bookData, initialCfi, syncProgressDebounced]);
+  }, [bookData, initialCfi]);
 
   // Sync with External Location (e.g. host page turns in reading room)
   useEffect(() => {
@@ -552,6 +639,11 @@ export function EpubReader({
     }
   };
 
+  const handleTouchCancel = () => {
+    isMultiTouchRef.current = false;
+    touchStartRef.current = null;
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (isMultiTouchRef.current || !touchStartRef.current) {
       isMultiTouchRef.current = false;
@@ -576,24 +668,17 @@ export function EpubReader({
       touch.clientX,
       touch.clientY,
       elapsed,
-      rect.width
+      rect.width,
+      TABLET_READER_TOUCH_OPTIONS
     );
 
-    if (action.type === 'swipe') {
-      if (action.direction === 'left') {
-        handleNext();
-      } else {
-        handlePrev();
-      }
-    } else if (action.type === 'tap') {
-      const relativeX = (touch.clientX - rect.left) / rect.width;
-      if (relativeX <= 0.2) {
-        handlePrev();
-      } else if (relativeX >= 0.8) {
-        handleNext();
-      } else {
-        setIsToolbarVisible((v) => !v);
-      }
+    const navAction = resolveNavigationAction(action, readingDirectionRef.current);
+    if (navAction === 'next') {
+      handleNext();
+    } else if (navAction === 'prev') {
+      handlePrev();
+    } else if (navAction === 'toggle_toolbar') {
+      setIsToolbarVisible((v) => !v);
     }
   };
 
@@ -750,9 +835,29 @@ export function EpubReader({
           </button>
         </div>
 
-        {/* Center: Reading Percentage */}
-        <div className="text-xs font-semibold tracking-wide opacity-75">
-          {percentage}% Read
+        {/* Center: Reading Percentage & Quick Navigation */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={handlePrev}
+            disabled={isAtStart}
+            aria-label="Previous Page"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-30 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+            title="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+          <div className="text-xs font-semibold tracking-wide opacity-75 min-w-[65px] sm:min-w-[75px] text-center select-none">
+            {percentage}% Read
+          </div>
+          <button
+            onClick={handleNext}
+            disabled={isAtEnd}
+            aria-label="Next Page"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition disabled:opacity-30 min-w-[36px] min-h-[36px] sm:min-w-[40px] sm:min-h-[40px] flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+            title="Next Page"
+          >
+            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
         </div>
 
         {/* Right: Appearance & Settings */}
@@ -772,25 +877,30 @@ export function EpubReader({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative flex-1 w-full h-full overflow-hidden"
+        onTouchCancel={handleTouchCancel}
+        className="relative flex-1 w-full h-full overflow-hidden flex items-center justify-center"
       >
-        {/* Previous Page Button (Left Edge) */}
+        {/* Previous Page Button (Left Edge Gutter) */}
         <button
           onClick={handlePrev}
+          disabled={isAtStart}
           aria-label="Previous Page"
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2.5 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition backdrop-blur-sm opacity-50 hover:opacity-100"
+          className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all duration-200 backdrop-blur-md opacity-60 hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[48px] min-h-[48px] flex items-center justify-center cursor-pointer disabled:opacity-20 disabled:pointer-events-none"
+          title="Previous Page (Left Arrow)"
         >
           <ChevronLeft className="w-6 h-6" />
         </button>
 
-        {/* EPUB Mount Node */}
-        <div ref={viewerRef} className="w-full h-full" />
+        {/* EPUB Mount Node with generous horizontal padding to prevent text overlap */}
+        <div ref={viewerRef} className="w-full h-full px-12 sm:px-16 md:px-20 transition-all" />
 
-        {/* Next Page Button (Right Edge) */}
+        {/* Next Page Button (Right Edge Gutter) */}
         <button
           onClick={handleNext}
+          disabled={isAtEnd}
           aria-label="Next Page"
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2.5 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition backdrop-blur-sm opacity-50 hover:opacity-100"
+          className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all duration-200 backdrop-blur-md opacity-60 hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[48px] min-h-[48px] flex items-center justify-center cursor-pointer disabled:opacity-20 disabled:pointer-events-none"
+          title="Next Page (Right Arrow)"
         >
           <ChevronRight className="w-6 h-6" />
         </button>
