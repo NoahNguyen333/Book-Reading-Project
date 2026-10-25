@@ -232,6 +232,8 @@ export function EpubReader({
     initialAnnotationsRef.current = initialAnnotations;
   }, [initialAnnotations]);
 
+  const initialCfiRef = useRef(initialCfi);
+
   // Live incoming annotation sync (from reading room broadcast)
   useEffect(() => {
     if (!liveAnnotation) return;
@@ -397,7 +399,7 @@ export function EpubReader({
 
     // Display initial position with resilient fallback
     rendition
-      .display(initialCfi || undefined)
+      .display(initialCfiRef.current || undefined)
       .catch((err) => {
         console.warn('Initial CFI display failed, falling back to first chapter:', err);
         return rendition.display();
@@ -540,7 +542,9 @@ export function EpubReader({
         bookRef.current = null;
       }
     };
-  }, [bookData, initialCfi]);
+    // initialCfi is captured via initialCfiRef on initial mount to prevent rendition tearing on annotation saves
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookData]);
 
   // Sync with External Location (e.g. host page turns in reading room)
   useEffect(() => {
@@ -738,48 +742,49 @@ export function EpubReader({
   ) => {
     if (!selectionState) return;
 
+    const res = await createAnnotationAction({
+      tenantId,
+      bookId,
+      location: selectionState.location,
+      highlightedText: selectionState.text,
+      note,
+      color,
+      isShared,
+    });
+
+    if (res.error || !res.data) {
+      throw new Error(res.error || 'Failed to save highlight');
+    }
+
+    setAnnotations((prev) => [res.data!, ...prev]);
+    onAnnotationCreated?.(res.data);
+
+    // Draw highlight overlay on rendition
     try {
-      const res = await createAnnotationAction({
-        tenantId,
-        bookId,
-        location: selectionState.location,
-        highlightedText: selectionState.text,
-        note,
-        color,
-        isShared,
-      });
-
-      if (res.data) {
-        setAnnotations((prev) => [res.data!, ...prev]);
-        onAnnotationCreated?.(res.data);
-
-        // Draw highlight overlay on rendition
-        try {
-          const cfg = HIGHLIGHT_COLOR_CONFIGS[color];
-          renditionRef.current?.annotations.highlight(
-            selectionState.location,
-            {},
-            () => {},
-            'hl-' + res.data.id,
-            { fill: cfg.hex, 'fill-opacity': '0.35' }
-          );
-        } catch {
-          // Rendition highlight fallback
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to save highlight:', err);
+      const cfg = HIGHLIGHT_COLOR_CONFIGS[color];
+      renditionRef.current?.annotations.highlight(
+        selectionState.location,
+        {},
+        () => {},
+        'hl-' + res.data.id,
+        { fill: cfg.hex, 'fill-opacity': '0.35' }
+      );
+    } catch {
+      // Rendition highlight fallback
     }
   };
 
   const handleDeleteAnnotation = async (id: string) => {
     try {
+      const target = annotations.find((a) => a.id === id);
       await deleteAnnotationAction(id, tenantId, bookId);
       setAnnotations((prev) => prev.filter((a) => a.id !== id));
-      try {
-        renditionRef.current?.annotations.remove(id, 'highlight');
-      } catch {
-        // Annotation removal fallback
+      if (target?.location) {
+        try {
+          renditionRef.current?.annotations.remove(target.location, 'highlight');
+        } catch {
+          // Annotation removal fallback
+        }
       }
     } catch (err) {
       console.warn('Failed to delete annotation:', err);
@@ -892,7 +897,7 @@ export function EpubReader({
         </button>
 
         {/* EPUB Mount Node with generous horizontal padding to prevent text overlap */}
-        <div ref={viewerRef} className="w-full h-full px-12 sm:px-16 md:px-20 transition-all" />
+        <div ref={viewerRef} className="w-full h-full px-12 sm:px-16 md:px-20 transition-all select-text" />
 
         {/* Next Page Button (Right Edge Gutter) */}
         <button

@@ -56,8 +56,21 @@ export async function createAnnotationAction(
     const allowedColors = ['yellow', 'green', 'pink', 'blue'] as const;
     const color = input.color && allowedColors.includes(input.color) ? input.color : 'yellow';
 
-    // Use verified book tenantId to prevent tenant mismatch
-    const tenantId = access.book.tenantId;
+    // Associate annotation with user's reading space if authorized, or default to book tenant
+    let tenantId = access.book.tenantId;
+    try {
+      const memberships = await getUserTenants(user.id);
+      if (input.tenantId && typeof input.tenantId === 'string') {
+        const role = findTenantRole(memberships, input.tenantId);
+        if (role) {
+          tenantId = input.tenantId;
+        }
+      } else if (!findTenantRole(memberships, tenantId) && memberships.length > 0) {
+        tenantId = memberships[0].tenant.id;
+      }
+    } catch {
+      // If fetching user memberships fails, fall back to verified book tenant
+    }
 
     const created = await createAnnotation({
       ...input,
@@ -69,7 +82,7 @@ export async function createAnnotationAction(
       userId: user.id,
     });
 
-    revalidatePath(`/reader/${input.bookId}`);
+    // Revalidate notebook so saved highlights appear in the Knowledge Notebook
     revalidatePath('/notebook');
     return { success: true, data: created };
   } catch (err) {
@@ -82,8 +95,9 @@ export async function createAnnotationAction(
 export async function deleteAnnotationAction(
   annotationId: string,
   tenantId: string,
-  bookId: string
+  bookId?: string
 ): Promise<AnnotationActionResult> {
+  void bookId;
   try {
     const user = await getCurrentUser();
     if (!user) {
@@ -100,7 +114,7 @@ export async function deleteAnnotationAction(
 
     await deleteAnnotation(annotationId, tenantId, user.id, isAdmin);
 
-    revalidatePath(`/reader/${bookId}`);
+    // Revalidate notebook so deleted highlights update in the Knowledge Notebook
     revalidatePath('/notebook');
     return { success: true };
   } catch (err) {

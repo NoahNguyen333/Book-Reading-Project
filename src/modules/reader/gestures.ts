@@ -10,10 +10,14 @@ export const RESILIENT_EPUB_CSS = `
 html, body {
   touch-action: pan-y manipulation;
   -webkit-touch-callout: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
 body {
   overflow-wrap: break-word !important;
   word-wrap: break-word !important;
+  -webkit-user-select: text;
+  user-select: text;
 }
 p, div, span, li, blockquote {
   overflow-wrap: break-word;

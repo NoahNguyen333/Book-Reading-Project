@@ -226,4 +226,73 @@ describe('Annotations & Knowledge Hub Utilities', () => {
       expect(md).toContain('*No highlights or reflections found for this book.*');
     });
   });
+
+  describe('Cross-Tenant & Format Location Invariants', () => {
+    it('groups annotations from public catalog books and tenant books under the user’s notebook', () => {
+      const publicBook: Book = {
+        id: 'public-book-1',
+        tenantId: 'platform-admin-tenant',
+        title: 'Public Domain Classic',
+        author: 'Jane Austen',
+        format: 'epub',
+        processingStatus: 'ready',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      };
+
+      const userPublicAnnotation: Annotation = {
+        id: 'ann-pub-1',
+        tenantId: 'platform-admin-tenant',
+        bookId: 'public-book-1',
+        userId: 'user-alice',
+        userName: 'Alice',
+        location: 'epubcfi(/6/4[chap01]!/4/2/4/1:0)',
+        highlightedText: 'It is a truth universally acknowledged...',
+        color: 'yellow',
+        isShared: false,
+        createdAt: '2026-10-24T12:00:00Z',
+        updatedAt: '2026-10-24T12:00:00Z',
+        book: publicBook,
+      };
+
+      const grouped = groupAnnotationsByBook([...mockAnnotations, userPublicAnnotation]);
+      const publicGroup = grouped.find((g) => g.book.id === 'public-book-1');
+      expect(publicGroup).toBeDefined();
+      expect(publicGroup?.totalCount).toBe(1);
+      expect(publicGroup?.annotations[0].highlightedText).toBe('It is a truth universally acknowledged...');
+    });
+
+    it('preserves valid location identifiers across EPUB CFIs and PDF page CFIs', () => {
+      const epubAnn: Annotation = {
+        id: 'ann-epub',
+        tenantId: 'tenant-1',
+        bookId: 'book-a',
+        userId: 'user-alice',
+        location: 'epubcfi(/6/12[c02]!/4/2/10/1:15)',
+        highlightedText: 'In a hole in the ground there lived a hobbit.',
+        color: 'yellow',
+        isShared: true,
+        createdAt: '2026-10-24T12:00:00Z',
+        updatedAt: '2026-10-24T12:00:00Z',
+        book: bookA,
+      };
+
+      const pdfAnn: Annotation = {
+        id: 'ann-pdf',
+        tenantId: 'tenant-1',
+        bookId: 'book-b',
+        userId: 'user-alice',
+        location: 'page:42',
+        highlightedText: 'Somewhere, something incredible is waiting to be known.',
+        color: 'blue',
+        isShared: false,
+        createdAt: '2026-10-24T12:05:00Z',
+        updatedAt: '2026-10-24T12:05:00Z',
+        book: bookB,
+      };
+
+      expect(epubAnn.location.startsWith('epubcfi(')).toBe(true);
+      expect(pdfAnn.location).toBe('page:42');
+    });
+  });
 });

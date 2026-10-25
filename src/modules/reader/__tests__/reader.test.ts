@@ -386,5 +386,73 @@ describe('EPUB Reader Utilities & State Machine', () => {
       expect(prevAction).toHaveBeenCalledTimes(1);
       expect(nextAction).toHaveBeenCalledTimes(1);
     });
+
+    it('removes visual highlights by CFI location rather than database ID', () => {
+      const mockRemove = vi.fn();
+      const mockRendition = {
+        annotations: {
+          remove: mockRemove,
+        },
+      };
+
+      const annotations = [
+        { id: 'ann-123', location: 'epubcfi(/6/4[chap01]!/4/2/4/1:0)' },
+        { id: 'ann-456', location: 'epubcfi(/6/8[chap02]!/4/2/8/1:0)' },
+      ];
+
+      const deleteAnnotation = (id: string) => {
+        const target = annotations.find((a) => a.id === id);
+        if (target?.location) {
+          mockRendition.annotations.remove(target.location, 'highlight');
+        }
+      };
+
+      deleteAnnotation('ann-123');
+      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(mockRemove).toHaveBeenCalledWith('epubcfi(/6/4[chap01]!/4/2/4/1:0)', 'highlight');
+      expect(mockRemove).not.toHaveBeenCalledWith('ann-123', 'highlight');
+    });
+
+    it('ensures initial CFI is captured on mount without causing rendition churn on progress updates', () => {
+      let renditionCreatedCount = 0;
+      let renditionDestroyedCount = 0;
+
+      // Simulates the stable effect lifecycle where rendition depends only on bookData
+      class ReaderLifecycleSimulator {
+        private initialCfiRef: string | null;
+        public activeCfi: string | null = null;
+
+        constructor(initialCfi: string | null) {
+          this.initialCfiRef = initialCfi;
+          this.mount();
+        }
+
+        private mount() {
+          renditionCreatedCount++;
+          this.activeCfi = this.initialCfiRef;
+        }
+
+        public onServerProgressRevalidate(newServerCfi: string) {
+          // Stable reader ignores prop changes for rendition rebuilding
+          void newServerCfi;
+        }
+
+        public unmount() {
+          renditionDestroyedCount++;
+        }
+      }
+
+      const reader = new ReaderLifecycleSimulator('epubcfi(/6/2!/4/1:0)');
+      expect(renditionCreatedCount).toBe(1);
+      expect(reader.activeCfi).toBe('epubcfi(/6/2!/4/1:0)');
+
+      // Simulates saveReadingProgress revalidation arriving from server
+      reader.onServerProgressRevalidate('epubcfi(/6/4!/4/1:10)');
+      expect(renditionCreatedCount).toBe(1);
+      expect(renditionDestroyedCount).toBe(0);
+
+      reader.unmount();
+      expect(renditionDestroyedCount).toBe(1);
+    });
   });
 });

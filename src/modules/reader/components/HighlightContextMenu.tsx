@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, MessageSquare, Users, Lock, X, Loader2, Sparkles } from 'lucide-react';
+import { Check, MessageSquare, Users, Lock, X, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { HighlightColor, HIGHLIGHT_COLOR_CONFIGS } from '../annotations/types';
 
 interface HighlightContextMenuProps {
@@ -22,12 +22,15 @@ export function HighlightContextMenu({
   const [note, setNote] = useState('');
   const [isShared, setIsShared] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Close on outside click or Escape
+  // Close on outside click, tap, or Escape
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
+    function handleClickOutside(e: MouseEvent | TouchEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
@@ -39,10 +42,15 @@ export function HighlightContextMenu({
     }
 
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside, { passive: true });
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
     };
   }, [onClose]);
 
@@ -57,9 +65,15 @@ export function HighlightContextMenu({
     setSelectedColor(color);
     if (!isNoteOpen) {
       setIsSaving(true);
+      setSaveError(null);
       try {
         await onSave(color, undefined, isShared);
-        onClose();
+        setIsSuccess(true);
+        closeTimeoutRef.current = setTimeout(() => {
+          onClose();
+        }, 350);
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save highlight');
       } finally {
         setIsSaving(false);
       }
@@ -68,9 +82,15 @@ export function HighlightContextMenu({
 
   const handleFullSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
       await onSave(selectedColor, note.trim() || undefined, isShared);
-      onClose();
+      setIsSuccess(true);
+      closeTimeoutRef.current = setTimeout(() => {
+        onClose();
+      }, 400);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save highlight');
     } finally {
       setIsSaving(false);
     }
@@ -110,6 +130,12 @@ export function HighlightContextMenu({
         </div>
 
         <div className="flex items-center gap-1">
+          {isSuccess && !isNoteOpen && (
+            <span className="text-[11px] font-medium text-green-600 dark:text-green-400 flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-950/60 animate-in fade-in">
+              <Check className="w-3 h-3 stroke-[3]" />
+              Saved
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setIsNoteOpen((v) => !v)}
@@ -137,6 +163,17 @@ export function HighlightContextMenu({
       <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 line-clamp-2 italic text-[11px] text-gray-600 dark:text-gray-300">
         &ldquo;{selectedText}&rdquo;
       </div>
+
+      {/* Error feedback banner if saving fails */}
+      {saveError && (
+        <div
+          role="alert"
+          className="p-2 rounded-lg bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-[11px] text-red-700 dark:text-red-300 flex items-start gap-1.5 animate-in fade-in"
+        >
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-red-500" />
+          <span className="flex-1 leading-tight">{saveError}</span>
+        </div>
+      )}
 
       {/* Note Attachment & Visibility Toggle (Expandable) */}
       {isNoteOpen && (
@@ -176,15 +213,29 @@ export function HighlightContextMenu({
             <button
               type="button"
               onClick={handleFullSave}
-              disabled={isSaving}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-sm transition disabled:opacity-50"
+              disabled={isSaving || isSuccess}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold text-xs shadow-sm transition disabled:opacity-75 ${
+                isSuccess
+                  ? 'bg-green-600 text-white'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white'
+              }`}
             >
               {isSaving ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : isSuccess ? (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Saved!</span>
+                </>
               ) : (
-                <Sparkles className="w-3.5 h-3.5" />
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Save Note</span>
+                </>
               )}
-              <span>Save Note</span>
             </button>
           </div>
         </div>

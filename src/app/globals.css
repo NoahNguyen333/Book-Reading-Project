@@ -59,3 +59,8 @@ body {
 .font-sans {
   font-family: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+
+.pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: transparent;
+}

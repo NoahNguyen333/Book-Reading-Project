@@ -22,6 +22,7 @@ import { Bookmark } from '../types';
 import {
   Annotation,
   HighlightColor,
+  HIGHLIGHT_COLOR_CONFIGS,
 } from '../annotations/types';
 import {
   createAnnotationAction,
@@ -37,6 +38,9 @@ import {
   calculatePagePercentage,
   createProgressSyncManager,
   ProgressSyncManager,
+  findHighlightRects,
+  sortPdfTextItems,
+  PdfTextItem,
 } from '../utils';
 import {
   classifyTouchGesture,
@@ -86,6 +90,8 @@ export function PdfReader({
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfjsLibRef = useRef<any>(null);
 
   const onLocationChangeRef = useRef(onLocationChange);
   onLocationChangeRef.current = onLocationChange;
@@ -130,9 +136,7 @@ export function PdfReader({
     location: string;
     position: { x: number; y: number };
   } | null>(null);
-  const [textItems, setTextItems] = useState<
-    Array<{ str: string; left: number; top: number; width: number; height: number; fontSize: number }>
-  >([]);
+  const [textItems, setTextItems] = useState<PdfTextItem[]>([]);
 
   // Page direct input
   const [inputPage, setInputPage] = useState<string>(String(initialPage));
@@ -183,6 +187,7 @@ export function PdfReader({
       setIsDocumentLoading(true);
       try {
         const pdfjs = await import('pdfjs-dist');
+        pdfjsLibRef.current = pdfjs;
         if (!pdfjs.GlobalWorkerOptions.workerSrc) {
           pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
         }
@@ -287,22 +292,43 @@ export function PdfReader({
           .then((textContent) => {
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const items = (textContent.items as any[])
-                .filter((it) => it.str && it.str.trim())
-                .map((it) => {
-                  const tx = it.transform;
-                  const x = tx[4] * scale;
-                  const y = viewport.height - tx[5] * scale;
-                  return {
-                    str: String(it.str),
-                    left: x,
-                    top: Math.max(0, y - (it.height || 12) * scale),
-                    width: (it.width || 20) * scale,
-                    height: (it.height || 12) * scale,
-                    fontSize: Math.max(8, Math.abs(tx[0] || 12) * scale),
-                  };
+              const rawItems = textContent.items as any[];
+              const items: PdfTextItem[] = [];
+
+              for (const it of rawItems) {
+                if (!it.str || !it.str.trim()) continue;
+                const tx = it.transform;
+                let left = tx[4] * scale;
+                let top = viewport.height - tx[5] * scale;
+                let fontSize = Math.max(8, Math.abs(tx[0] || 12) * scale);
+                let height = (it.height || 12) * scale;
+                let width = (it.width || 20) * scale;
+
+                if (pdfjsLibRef.current?.Util?.transform) {
+                  const m = pdfjsLibRef.current.Util.transform(viewport.transform, tx);
+                  left = m[4];
+                  top = m[5];
+                  fontSize = Math.max(8, Math.hypot(m[2], m[3]) || Math.abs(m[0]) || 12);
+                  height = it.height ? it.height * scale : fontSize;
+                  top = Math.max(0, top - height);
+                  width = Math.max(4, it.width * scale);
+                } else {
+                  top = Math.max(0, top - height);
+                }
+
+                items.push({
+                  str: String(it.str),
+                  left: Math.round(left * 10) / 10,
+                  top: Math.round(top * 10) / 10,
+                  width: Math.round(width * 10) / 10,
+                  height: Math.round(height * 10) / 10,
+                  fontSize: Math.round(fontSize * 10) / 10,
                 });
-              setTextItems(items);
+              }
+
+              // Sort into authentic visual reading order using production helper
+              const sortedItems = sortPdfTextItems(items);
+              setTextItems(sortedItems);
             } catch {
               // Ignore text layer mapping errors
             }
@@ -413,7 +439,13 @@ export function PdfReader({
       return;
     }
 
-    if (isDocumentLoading || isPageRendering || hasActiveSelection() || isInteractiveElement(e.target)) {
+    if (hasActiveSelection()) {
+      touchStartRef.current = null;
+      checkSelection();
+      return;
+    }
+
+    if (isDocumentLoading || isPageRendering || isInteractiveElement(e.target)) {
       touchStartRef.current = null;
       return;
     }
@@ -547,23 +579,29 @@ export function PdfReader({
     }
   };
 
-  // Annotation Handlers
-  const handleMouseUp = () => {
+  // Annotation Selection Handlers
+  const checkSelection = useCallback(() => {
     const selection = window.getSelection();
     const text = selection?.toString().trim();
     if (text && text.length > 0 && selection && selection.rangeCount > 0) {
       try {
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        setSelectionState({
-          text,
-          location: formatPageCfi(currentPage),
-          position: { x: rect.left + rect.width / 2, y: rect.top },
-        });
+        if (rect.width > 0 || rect.height > 0) {
+          setSelectionState({
+            text,
+            location: formatPageCfi(currentPage),
+            position: { x: rect.left + rect.width / 2, y: rect.top },
+          });
+        }
       } catch {
         // Selection coordinate fallback
       }
     }
+  }, [currentPage]);
+
+  const handleMouseUp = () => {
+    checkSelection();
   };
 
   const handleSaveAnnotation = async (
@@ -573,24 +611,23 @@ export function PdfReader({
   ) => {
     if (!selectionState) return;
 
-    try {
-      const res = await createAnnotationAction({
-        tenantId,
-        bookId,
-        location: selectionState.location,
-        highlightedText: selectionState.text,
-        note,
-        color,
-        isShared,
-      });
+    const res = await createAnnotationAction({
+      tenantId,
+      bookId,
+      location: selectionState.location,
+      highlightedText: selectionState.text,
+      note,
+      color,
+      isShared,
+    });
 
-      if (res.data) {
-        setAnnotations((prev) => [res.data!, ...prev]);
-        onAnnotationCreated?.(res.data);
-      }
-    } catch (err) {
-      console.warn('Failed to save highlight:', err);
+    if (res.error || !res.data) {
+      throw new Error(res.error || 'Failed to save highlight');
     }
+
+    setAnnotations((prev) => [res.data!, ...prev]);
+    onAnnotationCreated?.(res.data);
+    window.getSelection()?.removeAllRanges();
   };
 
   const handleDeleteAnnotation = async (id: string) => {
@@ -786,9 +823,44 @@ export function PdfReader({
                 style={{ filter: canvasFilter }}
                 className="block rounded-sm transition duration-150"
               />
+              {/* Visual Highlights Overlay Layer */}
+              <div
+                className="absolute inset-0 pointer-events-none overflow-hidden"
+                style={{
+                  width: canvasRef.current?.style.width,
+                  height: canvasRef.current?.style.height,
+                }}
+              >
+                {annotations
+                  .filter((ann) => parsePageFromCfi(ann.location) === currentPage)
+                  .map((ann) => {
+                    const rects = findHighlightRects(textItems, ann.highlightedText);
+                    const cfg = HIGHLIGHT_COLOR_CONFIGS[ann.color] || HIGHLIGHT_COLOR_CONFIGS.yellow;
+                    return (
+                      <React.Fragment key={ann.id}>
+                        {rects.map((rect, rIdx) => (
+                          <div
+                            key={`${ann.id}-${rIdx}`}
+                            className="absolute pointer-events-none rounded-xs transition-opacity duration-150"
+                            style={{
+                              left: `${rect.left}px`,
+                              top: `${rect.top}px`,
+                              width: `${rect.width}px`,
+                              height: `${rect.height}px`,
+                              backgroundColor: cfg.hex,
+                              opacity: 0.38,
+                              mixBlendMode: theme === 'dark' ? 'screen' : 'multiply',
+                            }}
+                          />
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+              </div>
+
               {/* Selectable Text Layer Overlay */}
               <div
-                className="absolute inset-0 overflow-hidden pointer-events-auto select-text"
+                className="absolute inset-0 overflow-hidden pointer-events-auto select-text pdf-text-layer"
                 style={{
                   width: canvasRef.current?.style.width,
                   height: canvasRef.current?.style.height,
@@ -801,8 +873,12 @@ export function PdfReader({
                       position: 'absolute',
                       left: `${item.left}px`,
                       top: `${item.top}px`,
+                      width: `${item.width}px`,
+                      height: `${item.height}px`,
                       fontSize: `${item.fontSize}px`,
                       lineHeight: `${item.height}px`,
+                      fontFamily: 'sans-serif',
+                      whiteSpace: 'pre',
                       color: 'transparent',
                       userSelect: 'text',
                     }}

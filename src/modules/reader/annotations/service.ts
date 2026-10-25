@@ -123,11 +123,12 @@ export async function getGroupedUserAnnotations(
 ): Promise<GroupedBookAnnotations[]> {
   const supabase = await createClient();
 
+  // Load all highlights belonging to current user (including public books)
+  // plus any shared highlights within this family space
   const { data, error } = await supabase
     .from('annotations')
     .select('*, books(*)')
-    .eq('tenant_id', tenantId)
-    .or(`user_id.eq.${currentUserId},is_shared.eq.true`)
+    .or(`user_id.eq.${currentUserId},and(tenant_id.eq.${tenantId},is_shared.eq.true)`)
     .order('created_at', { ascending: false });
 
   let rows = data;
@@ -137,8 +138,7 @@ export async function getGroupedUserAnnotations(
     const { data: adminData } = await admin
       .from('annotations')
       .select('*, books(*)')
-      .eq('tenant_id', tenantId)
-      .or(`user_id.eq.${currentUserId},is_shared.eq.true`)
+      .or(`user_id.eq.${currentUserId},and(tenant_id.eq.${tenantId},is_shared.eq.true)`)
       .order('created_at', { ascending: false });
 
     if (!adminData) return [];
@@ -241,14 +241,23 @@ export async function deleteAnnotation(
   if (!isAdmin) {
     const { data: existing } = await admin
       .from('annotations')
-      .select('user_id')
+      .select('user_id, tenant_id')
       .eq('id', annotationId)
-      .eq('tenant_id', tenantId)
       .single();
 
     if (!existing || existing.user_id !== userId) {
       throw new Error('Access denied: You can only delete your own annotations.');
     }
+
+    const { error } = await admin
+      .from('annotations')
+      .delete()
+      .eq('id', annotationId);
+
+    if (error) {
+      throw new Error(`Failed to delete annotation: ${error.message}`);
+    }
+    return;
   }
 
   const { error } = await admin
