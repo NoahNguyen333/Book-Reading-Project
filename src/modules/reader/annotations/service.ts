@@ -34,7 +34,7 @@ function mapDbAnnotation(row: Record<string, unknown>, book?: Book): Annotation 
     bookId: String(row.book_id),
     userId: String(row.user_id),
     location: String(row.location),
-    highlightedText: String(row.highlighted_text),
+    highlightedText: String(row.selected_text),
     note: row.note ? String(row.note) : null,
     color: (String(row.color) as HighlightColor) || 'yellow',
     isShared: Boolean(row.is_shared),
@@ -186,7 +186,10 @@ export async function getGroupedUserAnnotations(
  * Persists a new highlight and reflection note.
  */
 export async function createAnnotation(
-  input: CreateAnnotationInput & { userId: string }
+  input: CreateAnnotationInput & {
+    userId: string;
+    format: 'epub' | 'pdf';
+  }
 ): Promise<Annotation> {
   const supabase = await createClient();
 
@@ -195,7 +198,8 @@ export async function createAnnotation(
     book_id: input.bookId,
     user_id: input.userId,
     location: input.location,
-    highlighted_text: input.highlightedText,
+    format: input.format,
+    selected_text: input.highlightedText,
     note: input.note?.trim() || null,
     color: input.color || 'yellow',
     is_shared: Boolean(input.isShared),

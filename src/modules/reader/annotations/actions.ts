@@ -80,6 +80,7 @@ export async function createAnnotationAction(
       note: cleanNote,
       color,
       userId: user.id,
+      format: access.book.format === 'pdf' ? 'pdf' : 'epub',
     });
 
     // Revalidate notebook so saved highlights appear in the Knowledge Notebook

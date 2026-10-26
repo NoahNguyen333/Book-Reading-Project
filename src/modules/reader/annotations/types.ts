@@ -23,6 +23,7 @@ export interface CreateAnnotationInput {
   bookId: string;
   location: string;
   highlightedText: string;
+  format?: 'epub' | 'pdf'; // thêm dòng này
   note?: string | null;
   color?: HighlightColor;
   isShared?: boolean;
