@@ -33,6 +33,8 @@ import { AnnotationsSidebar } from './AnnotationsSidebar';
 import {
   ReaderTheme,
   THEME_CONFIGS,
+  loadReaderSettings,
+  saveReaderSettings,
   parsePageFromCfi,
   formatPageCfi,
   calculatePagePercentage,
@@ -103,7 +105,22 @@ export function PdfReader({
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [zoom, setZoom] = useState<number>(1.2);
+  // Reader Theme initialized with deterministic default shared by server and client
   const [theme, setTheme] = useState<ReaderTheme>('light');
+  const [settingsLoaded, setSettingsLoaded] = useState<boolean>(false);
+
+  // Restore persisted settings from localStorage in a mount effect
+  useEffect(() => {
+    const settings = loadReaderSettings();
+    setTheme(settings.theme);
+    setSettingsLoaded(true);
+  }, []);
+
+  // Persist theme changes to localStorage once restored
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveReaderSettings({ theme });
+  }, [theme, settingsLoaded]);
   const [isDocumentLoading, setIsDocumentLoading] = useState<boolean>(true);
   const [isPageRendering, setIsPageRendering] = useState<boolean>(false);
 

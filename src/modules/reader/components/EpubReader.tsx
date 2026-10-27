@@ -34,6 +34,8 @@ import {
   THEME_CONFIGS,
   clampFontSize,
   DEFAULT_FONT_SIZE,
+  loadReaderSettings,
+  saveReaderSettings,
   createProgressSyncManager,
   ProgressSyncManager,
 } from '../utils';
@@ -94,8 +96,18 @@ export function EpubReader({
   // Reader State
   const [currentCfi, setCurrentCfi] = useState<string>(initialCfi || '');
   const [percentage, setPercentage] = useState<number>(0);
+  // Reader Visual State initialized with deterministic defaults shared by server and client
   const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT_SIZE);
   const [theme, setTheme] = useState<ReaderTheme>('light');
+  const [settingsLoaded, setSettingsLoaded] = useState<boolean>(false);
+
+  // Restore persisted settings from localStorage in a mount effect
+  useEffect(() => {
+    const settings = loadReaderSettings();
+    setTheme(settings.theme);
+    setFontSize(settings.fontSize);
+    setSettingsLoaded(true);
+  }, []);
   const [toc, setToc] = useState<NavItem[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
@@ -129,7 +141,7 @@ export function EpubReader({
 
   const currentCfiRef = useRef(currentCfi);
   currentCfiRef.current = currentCfi;
-  const isInitialMountRef = useRef(true);
+  const appliedFontSizeRef = useRef<number | null>(null);
   const fontResizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fontResizeRafRef = useRef<number | null>(null);
   const contentAbortControllersRef = useRef<Set<AbortController>>(new Set());
@@ -278,8 +290,12 @@ export function EpubReader({
     Object.values(THEME_CONFIGS).forEach((cfg) => {
       rendition.themes.register(cfg.name, cfg.bodyStyles);
     });
-    rendition.themes.select('light');
-    rendition.themes.fontSize(`${DEFAULT_FONT_SIZE}px`);
+    const initialSettings = loadReaderSettings();
+    const activeTheme = settingsLoaded ? theme : initialSettings.theme;
+    const activeFontSize = settingsLoaded ? fontSize : initialSettings.fontSize;
+    rendition.themes.select(activeTheme);
+    rendition.themes.fontSize(`${activeFontSize}px`);
+    appliedFontSizeRef.current = activeFontSize;
 
     // Register resilient styles and touch navigation listeners on iframe content
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -537,6 +553,7 @@ export function EpubReader({
       // Avoid clearing a newer instance's refs from an older cleanup
       if (renditionRef.current === rendition) {
         renditionRef.current = null;
+        appliedFontSizeRef.current = null;
       }
       if (bookRef.current === book) {
         bookRef.current = null;
@@ -556,17 +573,21 @@ export function EpubReader({
 
   // Handle Theme Change
   useEffect(() => {
+    if (!settingsLoaded) return;
     if (renditionRef.current) {
       renditionRef.current.themes.select(theme);
     }
-  }, [theme]);
+    saveReaderSettings({ theme });
+  }, [theme, settingsLoaded]);
 
   // Handle Font Size Change with CFI position preservation and debounce
   useEffect(() => {
+    if (!settingsLoaded) return;
+    saveReaderSettings({ fontSize });
+
     if (!renditionRef.current) return;
 
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
+    if (appliedFontSizeRef.current === fontSize) {
       return;
     }
 
@@ -591,6 +612,7 @@ export function EpubReader({
 
       // 2. Apply font size via supported epub.js themes API
       currentRendition.themes.fontSize(`${fontSize}px`);
+      appliedFontSizeRef.current = fontSize;
 
       // 3. Re-anchor to the captured CFI to prevent pagination drift
       if (targetCfi) {
@@ -615,7 +637,7 @@ export function EpubReader({
         fontResizeRafRef.current = null;
       }
     };
-  }, [fontSize]);
+  }, [fontSize, settingsLoaded]);
 
   // Mobile Touch & Gesture Handlers for Container
   const handleTouchStart = (e: React.TouchEvent) => {

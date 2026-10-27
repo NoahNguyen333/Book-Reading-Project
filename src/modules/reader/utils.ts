@@ -78,6 +78,88 @@ export function clampFontSize(size: number): number {
   return Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, size));
 }
 
+export const READER_SETTINGS_KEY = 'family-reading-room:reader-settings';
+
+export interface ReaderSettings {
+  theme: ReaderTheme;
+  fontSize: number;
+}
+
+export const DEFAULT_READER_SETTINGS: ReaderSettings = {
+  theme: 'light',
+  fontSize: DEFAULT_FONT_SIZE,
+};
+
+export function isValidReaderTheme(value: unknown): value is ReaderTheme {
+  return value === 'light' || value === 'sepia' || value === 'dark';
+}
+
+/**
+ * Loads persisted reader settings from browser localStorage.
+ * Falls back to DEFAULT_READER_SETTINGS if storage is empty, corrupted, or unavailable (SSR).
+ */
+export function loadReaderSettings(): ReaderSettings {
+  if (typeof window === 'undefined') {
+    return DEFAULT_READER_SETTINGS;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(READER_SETTINGS_KEY);
+    if (!raw) return DEFAULT_READER_SETTINGS;
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return DEFAULT_READER_SETTINGS;
+    }
+
+    const value = parsed as Partial<ReaderSettings>;
+
+    const theme: ReaderTheme = isValidReaderTheme(value.theme)
+      ? value.theme
+      : DEFAULT_READER_SETTINGS.theme;
+
+    const fontSize =
+      typeof value.fontSize === 'number' && Number.isFinite(value.fontSize)
+        ? clampFontSize(value.fontSize)
+        : DEFAULT_READER_SETTINGS.fontSize;
+
+    return { theme, fontSize };
+  } catch {
+    return DEFAULT_READER_SETTINGS;
+  }
+}
+
+/**
+ * Persists reader settings to browser localStorage.
+ * Merges with existing settings to avoid overwriting unspecified attributes.
+ */
+export function saveReaderSettings(settings: Partial<ReaderSettings>): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const current = loadReaderSettings();
+
+    const updatedTheme: ReaderTheme = isValidReaderTheme(settings.theme)
+      ? settings.theme
+      : current.theme;
+
+    const updatedFontSize: number =
+      typeof settings.fontSize === 'number' && Number.isFinite(settings.fontSize)
+        ? clampFontSize(settings.fontSize)
+        : current.fontSize;
+
+    window.localStorage.setItem(
+      READER_SETTINGS_KEY,
+      JSON.stringify({
+        theme: updatedTheme,
+        fontSize: updatedFontSize,
+      })
+    );
+  } catch {
+    // Graceful degrade if localStorage is unavailable
+  }
+}
+
 /**
  * Creates a debounced callback function.
  */

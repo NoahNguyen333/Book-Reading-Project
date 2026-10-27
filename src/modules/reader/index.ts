@@ -3,6 +3,7 @@ export * from './storage';
 export * from './service';
 export * from './actions';
 export * from './utils';
+export type { ReaderSettings } from './utils';
 export * from './gestures';
 export * from './access';
 export * from './hooks/useBookLoader';

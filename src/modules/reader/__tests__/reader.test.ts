@@ -7,6 +7,12 @@ import {
   DEFAULT_FONT_SIZE,
   createDebouncedFn,
   createProgressSyncManager,
+  loadReaderSettings,
+  saveReaderSettings,
+  DEFAULT_READER_SETTINGS,
+  READER_SETTINGS_KEY,
+  isValidReaderTheme,
+  ReaderTheme,
 } from '../utils';
 import { attachContentsCleanup } from '../gestures';
 
@@ -453,6 +459,319 @@ describe('EPUB Reader Utilities & State Machine', () => {
 
       reader.unmount();
       expect(renditionDestroyedCount).toBe(1);
+    });
+  });
+
+  describe('Reader Settings LocalStorage Persistence', () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+    });
+
+    afterEach(() => {
+      window.localStorage.clear();
+      vi.restoreAllMocks();
+    });
+
+    it('verifies DEFAULT_READER_SETTINGS and isValidReaderTheme helper', () => {
+      expect(DEFAULT_READER_SETTINGS).toEqual({
+        theme: 'light',
+        fontSize: 16,
+      });
+
+      expect(isValidReaderTheme('light')).toBe(true);
+      expect(isValidReaderTheme('sepia')).toBe(true);
+      expect(isValidReaderTheme('dark')).toBe(true);
+      expect(isValidReaderTheme('neon')).toBe(false);
+      expect(isValidReaderTheme(null)).toBe(false);
+      expect(isValidReaderTheme(undefined)).toBe(false);
+      expect(isValidReaderTheme(123)).toBe(false);
+    });
+
+    it('returns default settings when localStorage is empty', () => {
+      const settings = loadReaderSettings();
+      expect(settings).toEqual({
+        theme: 'light',
+        fontSize: DEFAULT_FONT_SIZE,
+      });
+    });
+
+    it('persists and restores custom theme and font size', () => {
+      saveReaderSettings({ theme: 'dark', fontSize: 20 });
+      const restored = loadReaderSettings();
+      expect(restored).toEqual({
+        theme: 'dark',
+        fontSize: 20,
+      });
+
+      const storedRaw = window.localStorage.getItem(READER_SETTINGS_KEY);
+      expect(storedRaw).toBeDefined();
+      expect(JSON.parse(storedRaw!)).toEqual({
+        theme: 'dark',
+        fontSize: 20,
+      });
+    });
+
+    it('preserves existing settings when saving partial updates', () => {
+      // First save font size 22
+      saveReaderSettings({ fontSize: 22 });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'light',
+        fontSize: 22,
+      });
+
+      // Then save theme 'sepia' (like PDF reader does)
+      saveReaderSettings({ theme: 'sepia' });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'sepia',
+        fontSize: 22,
+      });
+
+      // Then update font size (like EPUB reader does)
+      saveReaderSettings({ fontSize: 18 });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'sepia',
+        fontSize: 18,
+      });
+    });
+
+    it('clamps font sizes outside permissible limits', () => {
+      saveReaderSettings({ fontSize: 100 });
+      expect(loadReaderSettings().fontSize).toBe(MAX_FONT_SIZE);
+
+      saveReaderSettings({ fontSize: 4 });
+      expect(loadReaderSettings().fontSize).toBe(MIN_FONT_SIZE);
+    });
+
+    it('sanitizes invalid or corrupted theme values in localStorage to default light theme', () => {
+      window.localStorage.setItem(
+        READER_SETTINGS_KEY,
+        JSON.stringify({ theme: 'hacker-green', fontSize: 18 })
+      );
+
+      const loaded = loadReaderSettings();
+      expect(loaded.theme).toBe('light');
+      expect(loaded.fontSize).toBe(18);
+    });
+
+    it('gracefully handles non-JSON or corrupted storage strings without throwing', () => {
+      window.localStorage.setItem(READER_SETTINGS_KEY, 'corrupted{json[data');
+      expect(loadReaderSettings()).toEqual(DEFAULT_READER_SETTINGS);
+
+      window.localStorage.setItem(READER_SETTINGS_KEY, '42');
+      expect(loadReaderSettings()).toEqual(DEFAULT_READER_SETTINGS);
+    });
+
+    it('safely tolerates localStorage getItem / setItem exceptions (e.g. private browsing)', () => {
+      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('SecurityError: The operation is insecure.');
+      });
+      expect(loadReaderSettings()).toEqual(DEFAULT_READER_SETTINGS);
+      getItemSpy.mockRestore();
+
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+      expect(() => saveReaderSettings({ theme: 'dark' })).not.toThrow();
+      setItemSpy.mockRestore();
+    });
+
+    it('prevents persistence effects from overwriting stored user settings before restoration completes (settingsLoaded guard)', () => {
+      // 1. User previously stored dark theme and font size 24 in localStorage
+      window.localStorage.setItem(
+        READER_SETTINGS_KEY,
+        JSON.stringify({ theme: 'dark', fontSize: 24 })
+      );
+
+      // 2. Simulates reader component lifecycle with settingsLoaded guard
+      class ReaderSettingsLifecycleSimulator {
+        public theme: ReaderTheme = 'light'; // deterministic initial default
+        public fontSize: number = DEFAULT_FONT_SIZE; // deterministic initial default
+        public settingsLoaded: boolean = false;
+        public saveCalls: Array<{ theme?: ReaderTheme; fontSize?: number }> = [];
+
+        // Simulated persistence effect
+        public onThemeOrFontEffect() {
+          if (!this.settingsLoaded) {
+            // Guard blocks writing defaults to localStorage
+            return;
+          }
+          saveReaderSettings({
+            theme: this.theme,
+            fontSize: this.fontSize,
+          });
+          this.saveCalls.push({ theme: this.theme, fontSize: this.fontSize });
+        }
+
+        // Simulated mount restoration effect
+        public mountRestoration() {
+          const loaded = loadReaderSettings();
+          this.theme = loaded.theme;
+          this.fontSize = loaded.fontSize;
+          this.settingsLoaded = true;
+        }
+
+        // Simulated user action
+        public userChangeTheme(newTheme: ReaderTheme) {
+          this.theme = newTheme;
+          this.onThemeOrFontEffect();
+        }
+
+        public userChangeFontSize(newSize: number) {
+          this.fontSize = newSize;
+          this.onThemeOrFontEffect();
+        }
+      }
+
+      const reader = new ReaderSettingsLifecycleSimulator();
+
+      // Prior to restoration, effects might trigger but guard must prevent writing defaults
+      reader.onThemeOrFontEffect();
+      expect(reader.saveCalls).toHaveLength(0);
+
+      // Verify localStorage still contains the user's stored preferences (not overwritten by defaults)
+      expect(loadReaderSettings()).toEqual({
+        theme: 'dark',
+        fontSize: 24,
+      });
+
+      // Mount restoration completes
+      reader.mountRestoration();
+      expect(reader.settingsLoaded).toBe(true);
+      expect(reader.theme).toBe('dark');
+      expect(reader.fontSize).toBe(24);
+
+      // Subsequent user change persists normally
+      reader.userChangeTheme('sepia');
+      expect(reader.saveCalls).toHaveLength(1);
+      expect(loadReaderSettings()).toEqual({
+        theme: 'sepia',
+        fontSize: 24, // font size 24 is preserved!
+      });
+
+      reader.userChangeFontSize(20);
+      expect(reader.saveCalls).toHaveLength(2);
+      expect(loadReaderSettings()).toEqual({
+        theme: 'sepia',
+        fontSize: 20,
+      });
+    });
+
+    it('faithfully applies restored font size to EPUB rendition and prevents desync on F5 refresh', () => {
+      // 1. Simulate persisted settings in localStorage before page load (e.g. 22px font size, sepia theme)
+      window.localStorage.setItem(
+        READER_SETTINGS_KEY,
+        JSON.stringify({ theme: 'sepia', fontSize: 22 })
+      );
+
+      // Mock rendition themes interface
+      const mockThemes = {
+        select: vi.fn(),
+        fontSize: vi.fn(),
+      };
+
+      // Simulates EPUB reader component lifecycle with appliedFontSizeRef
+      class EpubReaderLifecycleSimulator {
+        public fontSize: number = DEFAULT_FONT_SIZE; // 16
+        public theme: ReaderTheme = 'light';
+        public settingsLoaded: boolean = false;
+        public appliedFontSize: number | null = null;
+        public resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+        // Effect 1: Mount restoration
+        public runMountRestorationEffect() {
+          const settings = loadReaderSettings();
+          this.theme = settings.theme;
+          this.fontSize = settings.fontSize;
+          this.settingsLoaded = true;
+        }
+
+        // Effect 2: Rendition creation (ePub renderTo)
+        public runRenditionInitEffect() {
+          const initialSettings = loadReaderSettings();
+          const activeTheme = this.settingsLoaded ? this.theme : initialSettings.theme;
+          const activeFontSize = this.settingsLoaded ? this.fontSize : initialSettings.fontSize;
+
+          mockThemes.select(activeTheme);
+          mockThemes.fontSize(`${activeFontSize}px`);
+          this.appliedFontSize = activeFontSize;
+        }
+
+        // Effect 3: Font-size change handler
+        public runFontSizeEffect() {
+          if (!this.settingsLoaded) return;
+          saveReaderSettings({ fontSize: this.fontSize });
+
+          if (this.appliedFontSize === this.fontSize) {
+            // Already applied during initialization or previous change; do NOT trigger reflow/timer
+            return;
+          }
+
+          if (this.resizeTimer) clearTimeout(this.resizeTimer);
+          this.resizeTimer = setTimeout(() => {
+            mockThemes.fontSize(`${this.fontSize}px`);
+            this.appliedFontSize = this.fontSize;
+          }, 100);
+        }
+      }
+
+      const sim = new EpubReaderLifecycleSimulator();
+
+      // Render 1: Initial mount before effects run
+      expect(sim.fontSize).toBe(16);
+      expect(sim.settingsLoaded).toBe(false);
+
+      // Effect phase of Render 1:
+      // Mount effect schedules state update (fontSize -> 22, settingsLoaded -> true)
+      sim.runMountRestorationEffect();
+
+      // Rendition initialization runs:
+      // Even if settingsLoaded was false or batched, it must resolve to the stored 22px (not 16px)
+      sim.runRenditionInitEffect();
+      expect(mockThemes.fontSize).toHaveBeenCalledWith('22px');
+      expect(sim.appliedFontSize).toBe(22);
+
+      // Render 2: React processes state update, font size effect runs
+      sim.runFontSizeEffect();
+
+      // Because appliedFontSize === fontSize (22 === 22), no resize timer is pending
+      expect(sim.resizeTimer).toBeNull();
+      // Total calls to rendition.themes.fontSize remains exactly 1 (initialization at 22px)
+      expect(mockThemes.fontSize).toHaveBeenCalledTimes(1);
+      expect(mockThemes.fontSize).toHaveBeenLastCalledWith('22px');
+
+      // Subsequent user change to 24px
+      sim.fontSize = 24;
+      sim.runFontSizeEffect();
+      expect(sim.resizeTimer).not.toBeNull();
+
+      vi.advanceTimersByTime(100);
+      expect(mockThemes.fontSize).toHaveBeenCalledTimes(2);
+      expect(mockThemes.fontSize).toHaveBeenLastCalledWith('24px');
+      expect(sim.appliedFontSize).toBe(24);
+      expect(loadReaderSettings().fontSize).toBe(24);
+    });
+
+    it('ensures PDF theme changes preserve saved EPUB font size in localStorage', () => {
+      // User has custom EPUB font size 26
+      saveReaderSettings({ fontSize: 26 });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'light',
+        fontSize: 26,
+      });
+
+      // User opens PDF and switches theme to dark
+      saveReaderSettings({ theme: 'dark' });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'dark',
+        fontSize: 26,
+      });
+
+      // User switches PDF theme to sepia
+      saveReaderSettings({ theme: 'sepia' });
+      expect(loadReaderSettings()).toEqual({
+        theme: 'sepia',
+        fontSize: 26,
+      });
     });
   });
 });
